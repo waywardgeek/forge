@@ -109,6 +109,7 @@ lyric lexer {
     column: i32
     peeked_token: Token?
     bracket_depth: i32
+    last_kind: TokenKind
   }
 
   permanent class Lexer {
@@ -120,6 +121,7 @@ lyric lexer {
     peeked_token: Token?
     keywords: Dict<Sym, TokenKind>?
     bracket_depth: i32 = 0
+    last_kind: TokenKind
   }
   relation ArrayList Lexer:lc owns [Comment:lc]
 
@@ -129,7 +131,8 @@ lyric lexer {
       line: self.line,
       column: self.column,
       peeked_token: self.peeked_token,
-      bracket_depth: self.bracket_depth
+      bracket_depth: self.bracket_depth,
+      last_kind: self.last_kind
     }
   }
 
@@ -139,6 +142,11 @@ lyric lexer {
     self.column = state.column
     self.peeked_token = state.peeked_token
     self.bracket_depth = state.bracket_depth
+    self.last_kind = state.last_kind
+  }
+
+  func is_binary_op(kind: TokenKind) -> bool {
+    return kind == OPlus || kind == OMinus || kind == OStar || kind == OSlash || kind == OPercent || kind == OEqEq || kind == OBangEq || kind == OLtEq || kind == OGtEq || kind == OAmpAmp || kind == OPipePipe || kind == OAmp || kind == OCaret || kind == OShl || kind == OShr || kind == OAssign || kind == OPlusEq || kind == OMinusEq || kind == OStarEq || kind == OSlashEq || kind == PLt || kind == PGt || kind == PComma || kind == PArrow || kind == PFatArrow
   }
 
   func new_lexer(src_text: string, filename: Sym) -> Lexer {
@@ -234,9 +242,12 @@ lyric lexer {
     let p = self.peeked_token
     if !isnull(p) {
       self.peeked_token = null
+      self.last_kind = p!.kind
       return p!
     }
-    return self.scan()
+    let tok = self.scan()
+    self.last_kind = tok.kind
+    return tok
   }
 
   // ---- Escape sequences ----
@@ -511,8 +522,8 @@ lyric lexer {
           break
         }
       }
-      if self.bracket_depth > 0 {
-        return self.scan()  // skip newline inside brackets
+      if self.bracket_depth > 0 || is_binary_op(self.last_kind) {
+        return self.scan()  // skip newline inside brackets or after binary operator
       }
       return make_token(SNewline, "\n", start, self.current_pos())
     }
