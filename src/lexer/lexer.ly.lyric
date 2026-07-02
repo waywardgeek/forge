@@ -56,21 +56,26 @@ module lexer
     in field/param/variable names.
     """
 
-  invariant "No Line Continuation":
+  invariant "Line Continuation After Binary Operators":
     procedural
     """
-    The lexer does NOT support line continuation across binary
-    operators. A multi-condition expression MUST live on a single
-    logical line or be extracted into a helper.
+    The lexer suppresses newlines after binary operators. If the last
+    consumed token was a binary operator (as identified by is_binary_op),
+    the next SNewline is suppressed and the expression continues on the
+    following line. This is tracked via last_kind on the Lexer, updated
+    by next() on every consumed token.
+
+    Binary operators for continuation: +, -, *, /, %, ==, !=, <=, >=,
+    &&, ||, &, ^, <<, >>, =, +=, -=, *=, /=, <, >, comma, ->, =>.
 
     bracket_depth tracks () and [] nesting only. While bracket_depth
     > 0, newline bytes are consumed without emitting SNewline so that
     multi-line argument lists and list literals stay one statement.
     {} braces delimit blocks and MUST NOT increment bracket_depth.
 
-    bracket_depth is part of LexerState and MUST be saved/restored
-    by save_state and restore_state so backtracking does not corrupt
-    newline suppression.
+    Both bracket_depth and last_kind are part of LexerState and MUST
+    be saved/restored by save_state and restore_state so backtracking
+    does not corrupt newline suppression.
     """
 
   invariant "F-String Sentinels":
@@ -126,6 +131,10 @@ module lexer
   func init_keywords() -> Dict<Sym, TokenKind>
     source: lexer.ly:47
 
+  func is_binary_op(kind: TokenKind) -> bool
+    source: lexer.ly:148
+    doc: "Returns true if the given token kind is a binary operator eligible for line continuation. When the last consumed token is a binary operator, scan() suppresses the next newline."
+
   func lookup_keyword(lex: Lexer, text: string) -> TokenKind?
     source: lexer.ly:94
 
@@ -133,6 +142,8 @@ module lexer
     source: lexer.ly:107
     field bracket_depth: i32
     field column: i32
+    field last_kind: TokenKind
+      doc: "Kind of the last token consumed by next(). Used by scan() to suppress newlines after binary operators for line continuation."
     field line: i32
     field peeked_token: Token?
     field pos: i32
@@ -144,6 +155,8 @@ module lexer
     field filename: Sym?
     field keywords: Dict<Sym, TokenKind>?
       doc: "Keyword table mapping Sym(identifier) → TokenKind for hard keywords. Built once by init_keywords and consulted by scan_ident. Optional because the field is wired up after construction; lookup_keyword must tolerate a missing table."
+    field last_kind: TokenKind
+      doc: "Kind of the last token consumed by next(). Updated by next() on every consumed token. Consulted by scan() at newline boundaries — if last_kind is a binary operator, the newline is suppressed for line continuation."
     field line: i32
     field peeked_token: Token?
     field pos: i32
