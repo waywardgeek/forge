@@ -1198,16 +1198,15 @@ lyric checker {
     // Check registry
     let info = self.registry.lookup(name)
     if info != null {
-      // If generic type with args, substitute
-      if len(args) > 0 && len(info!.type_param_names) > 0 {
-        let bindings = Dict<Sym, Type>()
-        let mut limit = len(info!.type_param_names)
-        if len(args) < limit { limit = len(args) }
+      // If explicit type args are given, attach them positionally. This must
+      // NOT depend on info.type_param_names being populated — during Phase 1,
+      // a field type like Dict<Sym, f64> may be resolved while Dict's registry
+      // entry is still a Phase-0 stub (no type_param_names yet). Explicit args
+      // are positional; dropping them here caused TypeVar leaks downstream.
+      if len(args) > 0 {
         let mut resolved_args: [Type] = []
-        for i in range(0, limit) {
-          let resolved = self.resolve_type_expr(args[i])
-          bindings.set(sym(info!.type_param_names[i]), resolved)
-          append(resolved_args, resolved)
+        for a in args {
+          append(resolved_args, self.resolve_type_expr(a))
         }
         // Return a NEW type with type_args populated (like Go compiler)
         let result = Type { kind: info!.type_val.kind, bits: info!.type_val.bits, type_args: resolved_args }
@@ -3976,7 +3975,6 @@ lyric checker {
     // track down. Bill's call (2026-06-23).
     let alias_result = self.try_resolve_impl_alias_method(call_expr, receiver, method, type_args, args, recv_type)
     if !isnull(alias_result) { return alias_result! }
-
 
     // Built-in methods by receiver type
     let builtin = self.check_builtin_method(recv_type, method_str, arg_types)
