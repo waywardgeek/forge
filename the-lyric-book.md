@@ -23,7 +23,7 @@ An LLM can hold all of these design traditions in working memory simultaneously.
 
 ### First-iteration results
 
-The compiler bootstrapped to self-hosting in fourteen days — a 33,500-line Lyric compiler producing 114,473 lines of C, generation-stable. On the day the bootstrap reached its fixed point, we measured:
+The compiler bootstrapped to self-hosting in fourteen days — a 33,500-line Lyric compiler producing 114,473 lines of C, generation-stable. (A note on line counts: unless otherwise dated, counts in this book are as of this edition — 32,533 lines of compiler plus 998 lines of stdlib, rounded to "33,500" in running text. The 26,813 figure below is the compiler *alone*, measured on bootstrap day, June 12, 2026; the compiler has grown since as features landed.) On the day the bootstrap reached its fixed point, we measured:
 
 - **20% fewer lines** than the Go compiler it replaced (33,739 → 26,813), while Lyric lines are 13% *longer* on average (31.2 vs 27.6 bytes per line). The savings are real expressiveness — relations, match, `?` — not denser formatting.
 - **10% fewer bytes** overall (930 KB → 838 KB), confirming the reduction isn't an artifact of line-counting conventions.
@@ -382,7 +382,7 @@ No more `"mod"` slipping through. If someone adds a `Pow` variant to `Op`, the c
 
 ## 2.3 Match
 
-`match` is exhaustive — the compiler requires you to handle every variant. It works as an expression (returns a value) or as a statement. 🚧 *Branch-type unification for `match`-as-expression is not enforced yet — the checker takes the type of the first arm and trusts the rest agree. Mixing types across arms compiles today and fails downstream. Treat the spec rule "all arms produce the same type" as load-bearing.*
+`match` is exhaustive — the compiler requires you to handle every variant. It works as an expression (returns a value) or as a statement. 🚧 *Branch-type unification for `match`-as-expression is not enforced yet — the checker takes the type of the first arm and trusts the rest agree. Mixing types across arms compiles today and fails downstream. Treat the spec rule "all arms produce the same type" as load-bearing. In practice this rarely bites — the arms of a match naturally produce the same type, as every example in this book does — but don't lean on the checker to catch a mismatch for you yet.*
 
 ```lyric
 // Expression — returns a value
@@ -3456,7 +3456,23 @@ The `Dict<Sym, f64>` holds the bindings; `sym(name)` interns the lookup key on t
 
 The error path uses the same `Error { msg: ... }` literal and `(T, error)` tuple-return shape from Chapter 5, with `f"{e2}"` to stringify the error value. No `new_error` shortcut, no `.message()` call — just the idioms the language already has.
 
-🚧 *A natural next step is to wrap the `Dict<Sym, f64>` inside a `Calculator` or `VarTable` class so the bindings travel with the rest of the evaluator state. That doesn't compile today: declaring `vars: Dict<Sym, f64>` as a field on a non-generic class trips a `TypeVar leak 'V'` in the checker when a method calls `self.vars.get(...)` — the concrete `V = f64` from the field type isn't being propagated into `Dict.get`'s where-clause typevar. Making the outer class generic trips a different downstream monomorphization failure. Until both are fixed, the working pedagogy is a top-level `let vars = Dict<Sym, f64>()` plus free functions that take the dict as a parameter (as above).*
+A natural next step is to wrap the `Dict<Sym, f64>` inside a `VarTable` class so the bindings travel with the rest of the evaluator state:
+
+```lyric
+class VarTable {
+    vars: Dict<Sym, f64>
+
+    func get_var(self, name: string) -> (f64, error) {
+        let e = self.vars.get(sym(name))
+        if isnull(e) {
+            return (0.0, Error { msg: f"undefined variable: {name}" })
+        }
+        return (e!.value, null)
+    }
+}
+```
+
+The field's concrete type arguments (`Sym`, `f64`) flow through `self.vars.get(...)`, so the returned entry is a `DictEntry<Sym, f64>?` — no generics appear in the class's own signature. Construction is `VarTable { vars: Dict<Sym, f64>() }`.
 
 None of this uses garbage collection. The `Dict` is a hash table built on relations. When `main` returns, `vars` goes out of scope, its `HashedList`-injected destructor walks the children and frees every `DictEntry`, and the slabs reclaim the slots. The intern table — the `permanent` `SymTable` from §10.1 — lives for the lifetime of the process, which is what you want: a `Sym` value is a stable handle that never goes stale.
 
@@ -3741,6 +3757,8 @@ func main() {
 ```
 
 `spawn` launches a block on a new thread. `make_channel<T>()` creates a typed channel. `send` and `receive` are methods on the channel. That's the entire concurrency model. If you've used Go, this is familiar — goroutines and channels, with method syntax instead of arrow operators.
+
+A candor note before we go deeper: **concurrency is Lyric's least mature subsystem.** The compiler bootstraps single-threaded, so these features have had less production mileage than everything else in this book. What's solid today: `spawn` plus channels, with *all* cross-thread communication flowing through channels — that pattern works reliably and is what every example in this chapter builds toward. What isn't solid yet: `spawn` captures by pointer (a data race if you mutate captured state — §12.1), a closed channel gives no close signal (§12.3), `select` compiles to a polling loop (§12.4), and `guarded_by` parses but isn't enforced (§12.6). Each section flags its own gap in detail. The rule that keeps you safe through all of them: no shared mutable state across `spawn` boundaries — communicate through channels, and let one owner do the writes.
 
 ### 12.1 Spawn
 
@@ -4550,7 +4568,7 @@ The compiler by the numbers:
 | **Stdlib total** | **998** |
 | **Grand total** | **33,531** |
 
-33,531 lines of Lyric (compiler + stdlib) produce 114,473 lines of C. The 3.4× expansion ratio comes from monomorphization (each generic function becomes multiple concrete copies), generated destructors, slab allocator boilerplate, and the verbose nature of C compared to Lyric.
+33,531 lines of Lyric (compiler + stdlib) — the count rounded to "33,500" elsewhere in this book — produce 114,473 lines of C. The 3.4× expansion ratio comes from monomorphization (each generic function becomes multiple concrete copies), generated destructors, slab allocator boilerplate, and the verbose nature of C compared to Lyric.
 
 ### 14.6.1 First-Iteration Benchmarks
 
@@ -5466,7 +5484,7 @@ gcc -std=gnu11 -O2 -w -I runtime -o lyric lyric.c -lm
 ```
 $ make update
 ./lyric compile $(BOOTSTRAP_FILES) -o lyric.c
-lyric.c updated (114770 lines)
+lyric.c updated (114473 lines)
 ```
 
 `BOOTSTRAP_FILES` is the explicit list of 14 `.ly` files that make up the compiler, passed as a flat file list (not module mode — see Chapter 13 §13.9).
