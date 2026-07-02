@@ -33038,13 +33038,8 @@ TypeExpr* substitute_type_expr_copy(TypeExpr* te, Dict_CSym_string* type_map) {
         return NULL;
     }
     TypeExpr* _t1 = lyric_unwrap_class(te);
-    TypeExprKind _t2 = _t1->kind;
-    TypeExpr* _t3 = lyric_unwrap_class(te);
-    Span _t4 = _t3->span;
-    TypeExpr* _t5 = _lyric_slab_alloc_TypeExpr();
-    _t5->kind = _t2;
-    _t5->span = _t4;
-    TypeExpr* result = _t5;
+    TypeExpr* _t2 = deep_copy_type_expr(_t1);
+    TypeExpr* result = _t2;
     substitute_type_params_in_type_expr(result, type_map);
     return result;
 }
