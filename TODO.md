@@ -2,6 +2,15 @@
 
 ## Language Bugs
 
+### `Dict.len()` through a generic-typed class field miscompiles
+- `class VarTable { vars: Dict<Sym, f64> }` then `println(t.vars.len())` emits
+  `const char* _t = Dict_CSym_f64_len(...)` — return type of `len` typed as string in C output
+- The get/set TypeVar-leak on such fields is FIXED (resolve_named_type now attaches
+  explicit type args even when the registry entry is a Phase-0 stub); this is a
+  separate lowering/return-type bug for `len`
+- Repro: add `println(t.vars.len())` to testdata/dict_field_typeargs.ly
+- Found: 2026-07-02
+
 ### `ref`/`unref` on non-class types should be no-op at checker level
 - Currently handled by C backend type guard (TyClassHandle check)
 - Ideally the checker would warn and the lowerer would skip emission entirely
