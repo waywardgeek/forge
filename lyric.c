@@ -1157,6 +1157,7 @@ struct LexerState {
     int32_t column;
     Token* peeked_token;
     int32_t bracket_depth;
+    TokenKind last_kind;
 };
 
 struct TupleFieldType {
@@ -2146,6 +2147,7 @@ struct Lexer {
     Token* peeked_token;
     Dict_CSym_ETokenKind* keywords;
     int32_t bracket_depth;
+    TokenKind last_kind;
     LyricSlice_Commentptr __lc_children;
     struct Lexer* lyric_next;
 };
@@ -7426,6 +7428,9 @@ static lyric_string LexerState_to_string(LexerState v) {
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("bracket_depth: "));
     _result = lyric_str_concat(_result, lyric_sprintf("%d", v.bracket_depth));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("last_kind: "));
+    _result = lyric_str_concat(_result, TokenKind_to_string(v.last_kind));
     _result = lyric_str_concat(_result, LYRIC_STR("}"));
     return _result;
 }
@@ -9253,6 +9258,9 @@ static lyric_string Lexer_to_string(Lexer* v) {
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("bracket_depth: "));
     _result = lyric_str_concat(_result, lyric_sprintf("%d", v->bracket_depth));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("last_kind: "));
+    _result = lyric_str_concat(_result, TokenKind_to_string(v->last_kind));
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("__lc_children: "));
     _result = lyric_str_concat(_result, LYRIC_STR("<>"));
@@ -11115,17 +11123,17 @@ void ast_collect_var_refs_in_block(Block* block, Dict_CSym_bool* names);
 Dict_CSym_bool* ast_collect_used_func_names(File* file);
 bool ast_func_references_types(FuncDecl* fn_, Dict_CSym_bool* used_types);
 void merge_stdlib(File* file, File* std_file);
+bool str_has_prefix(lyric_string s, lyric_string prefix);
+bool str_has_suffix(lyric_string s, lyric_string suffix);
+int32_t str_index_of(lyric_string haystack, lyric_string needle);
+LyricSlice_lyric_string str_split(lyric_string s, lyric_string sep);
+lyric_string str_trim(lyric_string s);
 Sym* sym(lyric_string name);
 int64_t parse_int(lyric_string s);
 double str_to_float(lyric_string s);
 StringBuilder* new_string_builder(void);
 range_gen_t* range_init(int32_t start, int32_t end);
 bool range_next(range_gen_t* _gen);
-bool str_has_prefix(lyric_string s, lyric_string prefix);
-bool str_has_suffix(lyric_string s, lyric_string suffix);
-int32_t str_index_of(lyric_string haystack, lyric_string needle);
-LyricSlice_lyric_string str_split(lyric_string s, lyric_string sep);
-lyric_string str_trim(lyric_string s);
 uint64_t i8_get_hash(int8_t self);
 uint64_t i16_get_hash(int16_t self);
 uint64_t i32_get_hash(int32_t self);
@@ -11134,8 +11142,8 @@ uint64_t u8_get_hash(uint8_t self);
 uint64_t u16_get_hash(uint16_t self);
 uint64_t u32_get_hash(uint32_t self);
 uint64_t u64_get_hash(uint64_t self);
-SymTable* _get_sym_table(void);
 bool is_whitespace(uint8_t ch);
+SymTable* _get_sym_table(void);
 bool Sym_equals(Sym* self, Sym* other);
 void TypeExpr_destroy(TypeExpr* self);
 void TupleField_destroy(TupleField* self);
@@ -11413,6 +11421,7 @@ Dict_CSym_ETokenKind* init_keywords(void);
 LyricOpt_TokenKind lookup_keyword(Lexer* lex, lyric_string text);
 LexerState Lexer_save_state(Lexer* self);
 void Lexer_restore_state(Lexer* self, LexerState state);
+bool is_binary_op(TokenKind kind);
 Lexer* new_lexer(lyric_string src_text, Sym* filename);
 bool is_letter(uint8_t ch);
 bool is_digit(uint8_t ch);
@@ -15716,6 +15725,195 @@ void merge_stdlib(File* file, File* std_file) {
     if (merged_var_refs && --merged_var_refs->_rc == 0) Dict_CSym_bool_destroy(merged_var_refs);
 }
 
+bool str_has_prefix(lyric_string s, lyric_string prefix) {
+    int32_t _t0 = prefix.len;
+    int32_t _t1 = s.len;
+    bool _t2 = (_t0 > _t1);
+    if (_t2) {
+        return false;
+    }
+    int32_t i = 0;
+    while (1) {
+        int32_t _t3 = prefix.len;
+        bool _t4 = (i < _t3);
+        if (!(_t4)) break;
+        uint8_t _t5 = s.data[i];
+        uint8_t _t6 = prefix.data[i];
+        bool _t7 = (_t5 != _t6);
+        if (_t7) {
+            return false;
+        }
+        int32_t _t8 = (i + 1);
+        i = _t8;
+    }
+    return true;
+}
+
+bool str_has_suffix(lyric_string s, lyric_string suffix) {
+    int32_t _t0 = suffix.len;
+    int32_t _t1 = s.len;
+    bool _t2 = (_t0 > _t1);
+    if (_t2) {
+        return false;
+    }
+    int32_t _t3 = s.len;
+    int32_t _t4 = suffix.len;
+    int32_t _t5 = (_t3 - _t4);
+    int32_t offset = _t5;
+    int32_t i = 0;
+    while (1) {
+        int32_t _t6 = suffix.len;
+        bool _t7 = (i < _t6);
+        if (!(_t7)) break;
+        int32_t _t8 = (offset + i);
+        uint8_t _t9 = s.data[_t8];
+        uint8_t _t10 = suffix.data[i];
+        bool _t11 = (_t9 != _t10);
+        if (_t11) {
+            return false;
+        }
+        int32_t _t12 = (i + 1);
+        i = _t12;
+    }
+    return true;
+}
+
+int32_t str_index_of(lyric_string haystack, lyric_string needle) {
+    int32_t _t0 = needle.len;
+    bool _t1 = (_t0 == 0);
+    if (_t1) {
+        return 0;
+    }
+    int32_t _t2 = needle.len;
+    int32_t _t3 = haystack.len;
+    bool _t4 = (_t2 > _t3);
+    if (_t4) {
+        int32_t _t5 = (-1);
+        return _t5;
+    }
+    int32_t _t6 = haystack.len;
+    int32_t _t7 = needle.len;
+    int32_t _t8 = (_t6 - _t7);
+    int32_t limit = _t8;
+    int32_t i = 0;
+    while (1) {
+        bool _t9 = (i <= limit);
+        if (!(_t9)) break;
+        int32_t j = 0;
+        while (1) {
+            int32_t _t10 = needle.len;
+            bool _t11 = (j < _t10);
+            bool _sc12 = false;
+            _sc12 = _t11;
+            if (_sc12) {
+                int32_t _t13 = (i + j);
+                uint8_t _t14 = haystack.data[_t13];
+                uint8_t _t15 = needle.data[j];
+                bool _t16 = (_t14 == _t15);
+                _sc12 = _t16;
+            }
+            if (!(_sc12)) break;
+            int32_t _t17 = (j + 1);
+            j = _t17;
+        }
+        int32_t _t18 = needle.len;
+        bool _t19 = (j == _t18);
+        if (_t19) {
+            return i;
+        }
+        int32_t _t20 = (i + 1);
+        i = _t20;
+    }
+    int32_t _t21 = (-1);
+    return _t21;
+}
+
+LyricSlice_lyric_string str_split(lyric_string s, lyric_string sep) {
+    LyricSlice_lyric_string _t0 = lyric_slice_empty(LyricSlice_lyric_string);
+    LyricSlice_lyric_string result = _t0;
+    int32_t _t1 = sep.len;
+    bool _t2 = (_t1 == 0);
+    if (_t2) {
+        int32_t i = 0;
+        while (1) {
+            int32_t _t3 = s.len;
+            bool _t4 = (i < _t3);
+            if (!(_t4)) break;
+            uint8_t _t5 = s.data[i];
+            lyric_string _t6 = lyric_char_to_string(_t5);
+            LyricSlice_lyric_string _t7 = ({ lyric_push(&result, _t6, LyricSlice_lyric_string); result; });
+            result = _t7;
+            int32_t _t8 = (i + 1);
+            i = _t8;
+        }
+        return result;
+    }
+    int32_t start = 0;
+    while (1) {
+        int32_t _t9 = s.len;
+        bool _t10 = (start <= _t9);
+        if (!(_t10)) break;
+        int32_t _t11 = s.len;
+        lyric_string _t12 = lyric_subslice(s, start, _t11, lyric_string);
+        int32_t _t13 = lyric_str_index_of(_t12, sep);
+        int32_t idx = _t13;
+        bool _t14 = (idx < 0);
+        if (_t14) {
+            int32_t _t15 = s.len;
+            lyric_string _t16 = lyric_subslice(s, start, _t15, lyric_string);
+            LyricSlice_lyric_string _t17 = ({ lyric_push(&result, _t16, LyricSlice_lyric_string); result; });
+            result = _t17;
+            return result;
+        }
+        int32_t _t18 = (start + idx);
+        lyric_string _t19 = lyric_subslice(s, start, _t18, lyric_string);
+        LyricSlice_lyric_string _t20 = ({ lyric_push(&result, _t19, LyricSlice_lyric_string); result; });
+        result = _t20;
+        int32_t _t21 = (start + idx);
+        int32_t _t22 = sep.len;
+        int32_t _t23 = (_t21 + _t22);
+        start = _t23;
+    }
+    return result;
+    if (result.cap > 0 && result.data) free(result.data);
+}
+
+lyric_string str_trim(lyric_string s) {
+    int32_t lo = 0;
+    while (1) {
+        int32_t _t0 = s.len;
+        bool _t1 = (lo < _t0);
+        bool _sc2 = false;
+        _sc2 = _t1;
+        if (_sc2) {
+            uint8_t _t3 = s.data[lo];
+            bool _t4 = is_whitespace(_t3);
+            _sc2 = _t4;
+        }
+        if (!(_sc2)) break;
+        int32_t _t5 = (lo + 1);
+        lo = _t5;
+    }
+    int32_t _t6 = s.len;
+    int32_t hi = _t6;
+    while (1) {
+        bool _t7 = (hi > lo);
+        bool _sc8 = false;
+        _sc8 = _t7;
+        if (_sc8) {
+            int32_t _t9 = (hi - 1);
+            uint8_t _t10 = s.data[_t9];
+            bool _t11 = is_whitespace(_t10);
+            _sc8 = _t11;
+        }
+        if (!(_sc8)) break;
+        int32_t _t12 = (hi - 1);
+        hi = _t12;
+    }
+    lyric_string _t13 = lyric_subslice(s, lo, hi, lyric_string);
+    return _t13;
+}
+
 Sym* sym(lyric_string name) {
     uint64_t _t0 = lyric_hash_string(name);
     uint64_t h = _t0;
@@ -15927,195 +16125,6 @@ bool range_next(range_gen_t* _gen) {
     return false;
 }
 
-bool str_has_prefix(lyric_string s, lyric_string prefix) {
-    int32_t _t0 = prefix.len;
-    int32_t _t1 = s.len;
-    bool _t2 = (_t0 > _t1);
-    if (_t2) {
-        return false;
-    }
-    int32_t i = 0;
-    while (1) {
-        int32_t _t3 = prefix.len;
-        bool _t4 = (i < _t3);
-        if (!(_t4)) break;
-        uint8_t _t5 = s.data[i];
-        uint8_t _t6 = prefix.data[i];
-        bool _t7 = (_t5 != _t6);
-        if (_t7) {
-            return false;
-        }
-        int32_t _t8 = (i + 1);
-        i = _t8;
-    }
-    return true;
-}
-
-bool str_has_suffix(lyric_string s, lyric_string suffix) {
-    int32_t _t0 = suffix.len;
-    int32_t _t1 = s.len;
-    bool _t2 = (_t0 > _t1);
-    if (_t2) {
-        return false;
-    }
-    int32_t _t3 = s.len;
-    int32_t _t4 = suffix.len;
-    int32_t _t5 = (_t3 - _t4);
-    int32_t offset = _t5;
-    int32_t i = 0;
-    while (1) {
-        int32_t _t6 = suffix.len;
-        bool _t7 = (i < _t6);
-        if (!(_t7)) break;
-        int32_t _t8 = (offset + i);
-        uint8_t _t9 = s.data[_t8];
-        uint8_t _t10 = suffix.data[i];
-        bool _t11 = (_t9 != _t10);
-        if (_t11) {
-            return false;
-        }
-        int32_t _t12 = (i + 1);
-        i = _t12;
-    }
-    return true;
-}
-
-int32_t str_index_of(lyric_string haystack, lyric_string needle) {
-    int32_t _t0 = needle.len;
-    bool _t1 = (_t0 == 0);
-    if (_t1) {
-        return 0;
-    }
-    int32_t _t2 = needle.len;
-    int32_t _t3 = haystack.len;
-    bool _t4 = (_t2 > _t3);
-    if (_t4) {
-        int32_t _t5 = (-1);
-        return _t5;
-    }
-    int32_t _t6 = haystack.len;
-    int32_t _t7 = needle.len;
-    int32_t _t8 = (_t6 - _t7);
-    int32_t limit = _t8;
-    int32_t i = 0;
-    while (1) {
-        bool _t9 = (i <= limit);
-        if (!(_t9)) break;
-        int32_t j = 0;
-        while (1) {
-            int32_t _t10 = needle.len;
-            bool _t11 = (j < _t10);
-            bool _sc12 = false;
-            _sc12 = _t11;
-            if (_sc12) {
-                int32_t _t13 = (i + j);
-                uint8_t _t14 = haystack.data[_t13];
-                uint8_t _t15 = needle.data[j];
-                bool _t16 = (_t14 == _t15);
-                _sc12 = _t16;
-            }
-            if (!(_sc12)) break;
-            int32_t _t17 = (j + 1);
-            j = _t17;
-        }
-        int32_t _t18 = needle.len;
-        bool _t19 = (j == _t18);
-        if (_t19) {
-            return i;
-        }
-        int32_t _t20 = (i + 1);
-        i = _t20;
-    }
-    int32_t _t21 = (-1);
-    return _t21;
-}
-
-LyricSlice_lyric_string str_split(lyric_string s, lyric_string sep) {
-    LyricSlice_lyric_string _t0 = lyric_slice_empty(LyricSlice_lyric_string);
-    LyricSlice_lyric_string result = _t0;
-    int32_t _t1 = sep.len;
-    bool _t2 = (_t1 == 0);
-    if (_t2) {
-        int32_t i = 0;
-        while (1) {
-            int32_t _t3 = s.len;
-            bool _t4 = (i < _t3);
-            if (!(_t4)) break;
-            uint8_t _t5 = s.data[i];
-            lyric_string _t6 = lyric_char_to_string(_t5);
-            LyricSlice_lyric_string _t7 = ({ lyric_push(&result, _t6, LyricSlice_lyric_string); result; });
-            result = _t7;
-            int32_t _t8 = (i + 1);
-            i = _t8;
-        }
-        return result;
-    }
-    int32_t start = 0;
-    while (1) {
-        int32_t _t9 = s.len;
-        bool _t10 = (start <= _t9);
-        if (!(_t10)) break;
-        int32_t _t11 = s.len;
-        lyric_string _t12 = lyric_subslice(s, start, _t11, lyric_string);
-        int32_t _t13 = lyric_str_index_of(_t12, sep);
-        int32_t idx = _t13;
-        bool _t14 = (idx < 0);
-        if (_t14) {
-            int32_t _t15 = s.len;
-            lyric_string _t16 = lyric_subslice(s, start, _t15, lyric_string);
-            LyricSlice_lyric_string _t17 = ({ lyric_push(&result, _t16, LyricSlice_lyric_string); result; });
-            result = _t17;
-            return result;
-        }
-        int32_t _t18 = (start + idx);
-        lyric_string _t19 = lyric_subslice(s, start, _t18, lyric_string);
-        LyricSlice_lyric_string _t20 = ({ lyric_push(&result, _t19, LyricSlice_lyric_string); result; });
-        result = _t20;
-        int32_t _t21 = (start + idx);
-        int32_t _t22 = sep.len;
-        int32_t _t23 = (_t21 + _t22);
-        start = _t23;
-    }
-    return result;
-    if (result.cap > 0 && result.data) free(result.data);
-}
-
-lyric_string str_trim(lyric_string s) {
-    int32_t lo = 0;
-    while (1) {
-        int32_t _t0 = s.len;
-        bool _t1 = (lo < _t0);
-        bool _sc2 = false;
-        _sc2 = _t1;
-        if (_sc2) {
-            uint8_t _t3 = s.data[lo];
-            bool _t4 = is_whitespace(_t3);
-            _sc2 = _t4;
-        }
-        if (!(_sc2)) break;
-        int32_t _t5 = (lo + 1);
-        lo = _t5;
-    }
-    int32_t _t6 = s.len;
-    int32_t hi = _t6;
-    while (1) {
-        bool _t7 = (hi > lo);
-        bool _sc8 = false;
-        _sc8 = _t7;
-        if (_sc8) {
-            int32_t _t9 = (hi - 1);
-            uint8_t _t10 = s.data[_t9];
-            bool _t11 = is_whitespace(_t10);
-            _sc8 = _t11;
-        }
-        if (!(_sc8)) break;
-        int32_t _t12 = (hi - 1);
-        hi = _t12;
-    }
-    lyric_string _t13 = lyric_subslice(s, lo, hi, lyric_string);
-    return _t13;
-}
-
 uint64_t i8_get_hash(int8_t self) {
     uint64_t _t0 = ((uint64_t)self);
     return _t0;
@@ -16155,16 +16164,6 @@ uint64_t u64_get_hash(uint64_t self) {
     return self;
 }
 
-SymTable* _get_sym_table(void) {
-    bool _t0 = (_sym_table == NULL);
-    if (_t0) {
-        SymTable* _t1 = _lyric_slab_alloc_SymTable();
-        _sym_table = _t1;
-    }
-    SymTable* _t2 = lyric_unwrap_class(_sym_table);
-    return _t2;
-}
-
 bool is_whitespace(uint8_t ch) {
     bool _t0 = (ch == 32U);
     bool _sc1 = false;
@@ -16189,6 +16188,16 @@ bool is_whitespace(uint8_t ch) {
         _sc7 = _t9;
     }
     return _sc7;
+}
+
+SymTable* _get_sym_table(void) {
+    bool _t0 = (_sym_table == NULL);
+    if (_t0) {
+        SymTable* _t1 = _lyric_slab_alloc_SymTable();
+        _sym_table = _t1;
+    }
+    SymTable* _t2 = lyric_unwrap_class(_sym_table);
+    return _t2;
 }
 
 bool Sym_equals(Sym* self, Sym* other) {
@@ -20467,8 +20476,9 @@ LexerState Lexer_save_state(Lexer* self) {
     int32_t _t2 = self->column;
     Token* _t3 = self->peeked_token;
     int32_t _t4 = self->bracket_depth;
-    LexerState _t5 = (LexerState){.pos = _t0, .line = _t1, .column = _t2, .peeked_token = _t3, .bracket_depth = _t4};
-    return _t5;
+    TokenKind _t5 = self->last_kind;
+    LexerState _t6 = (LexerState){.pos = _t0, .line = _t1, .column = _t2, .peeked_token = _t3, .bracket_depth = _t4, .last_kind = _t5};
+    return _t6;
 }
 
 void Lexer_restore_state(Lexer* self, LexerState state) {
@@ -20482,6 +20492,206 @@ void Lexer_restore_state(Lexer* self, LexerState state) {
     self->peeked_token = _t3;
     int32_t _t4 = state.bracket_depth;
     self->bracket_depth = _t4;
+    TokenKind _t5 = state.last_kind;
+    self->last_kind = _t5;
+}
+
+bool is_binary_op(TokenKind kind) {
+    TokenKind _t0 = TokenKind_OPlus;
+    bool _t1 = (kind == _t0);
+    bool _sc2 = false;
+    _sc2 = _t1;
+    bool _t3 = (!_sc2);
+    if (_t3) {
+        TokenKind _t4 = TokenKind_OMinus;
+        bool _t5 = (kind == _t4);
+        _sc2 = _t5;
+    }
+    bool _sc6 = false;
+    _sc6 = _sc2;
+    bool _t7 = (!_sc6);
+    if (_t7) {
+        TokenKind _t8 = TokenKind_OStar;
+        bool _t9 = (kind == _t8);
+        _sc6 = _t9;
+    }
+    bool _sc10 = false;
+    _sc10 = _sc6;
+    bool _t11 = (!_sc10);
+    if (_t11) {
+        TokenKind _t12 = TokenKind_OSlash;
+        bool _t13 = (kind == _t12);
+        _sc10 = _t13;
+    }
+    bool _sc14 = false;
+    _sc14 = _sc10;
+    bool _t15 = (!_sc14);
+    if (_t15) {
+        TokenKind _t16 = TokenKind_OPercent;
+        bool _t17 = (kind == _t16);
+        _sc14 = _t17;
+    }
+    bool _sc18 = false;
+    _sc18 = _sc14;
+    bool _t19 = (!_sc18);
+    if (_t19) {
+        TokenKind _t20 = TokenKind_OEqEq;
+        bool _t21 = (kind == _t20);
+        _sc18 = _t21;
+    }
+    bool _sc22 = false;
+    _sc22 = _sc18;
+    bool _t23 = (!_sc22);
+    if (_t23) {
+        TokenKind _t24 = TokenKind_OBangEq;
+        bool _t25 = (kind == _t24);
+        _sc22 = _t25;
+    }
+    bool _sc26 = false;
+    _sc26 = _sc22;
+    bool _t27 = (!_sc26);
+    if (_t27) {
+        TokenKind _t28 = TokenKind_OLtEq;
+        bool _t29 = (kind == _t28);
+        _sc26 = _t29;
+    }
+    bool _sc30 = false;
+    _sc30 = _sc26;
+    bool _t31 = (!_sc30);
+    if (_t31) {
+        TokenKind _t32 = TokenKind_OGtEq;
+        bool _t33 = (kind == _t32);
+        _sc30 = _t33;
+    }
+    bool _sc34 = false;
+    _sc34 = _sc30;
+    bool _t35 = (!_sc34);
+    if (_t35) {
+        TokenKind _t36 = TokenKind_OAmpAmp;
+        bool _t37 = (kind == _t36);
+        _sc34 = _t37;
+    }
+    bool _sc38 = false;
+    _sc38 = _sc34;
+    bool _t39 = (!_sc38);
+    if (_t39) {
+        TokenKind _t40 = TokenKind_OPipePipe;
+        bool _t41 = (kind == _t40);
+        _sc38 = _t41;
+    }
+    bool _sc42 = false;
+    _sc42 = _sc38;
+    bool _t43 = (!_sc42);
+    if (_t43) {
+        TokenKind _t44 = TokenKind_OAmp;
+        bool _t45 = (kind == _t44);
+        _sc42 = _t45;
+    }
+    bool _sc46 = false;
+    _sc46 = _sc42;
+    bool _t47 = (!_sc46);
+    if (_t47) {
+        TokenKind _t48 = TokenKind_OCaret;
+        bool _t49 = (kind == _t48);
+        _sc46 = _t49;
+    }
+    bool _sc50 = false;
+    _sc50 = _sc46;
+    bool _t51 = (!_sc50);
+    if (_t51) {
+        TokenKind _t52 = TokenKind_OShl;
+        bool _t53 = (kind == _t52);
+        _sc50 = _t53;
+    }
+    bool _sc54 = false;
+    _sc54 = _sc50;
+    bool _t55 = (!_sc54);
+    if (_t55) {
+        TokenKind _t56 = TokenKind_OShr;
+        bool _t57 = (kind == _t56);
+        _sc54 = _t57;
+    }
+    bool _sc58 = false;
+    _sc58 = _sc54;
+    bool _t59 = (!_sc58);
+    if (_t59) {
+        TokenKind _t60 = TokenKind_OAssign;
+        bool _t61 = (kind == _t60);
+        _sc58 = _t61;
+    }
+    bool _sc62 = false;
+    _sc62 = _sc58;
+    bool _t63 = (!_sc62);
+    if (_t63) {
+        TokenKind _t64 = TokenKind_OPlusEq;
+        bool _t65 = (kind == _t64);
+        _sc62 = _t65;
+    }
+    bool _sc66 = false;
+    _sc66 = _sc62;
+    bool _t67 = (!_sc66);
+    if (_t67) {
+        TokenKind _t68 = TokenKind_OMinusEq;
+        bool _t69 = (kind == _t68);
+        _sc66 = _t69;
+    }
+    bool _sc70 = false;
+    _sc70 = _sc66;
+    bool _t71 = (!_sc70);
+    if (_t71) {
+        TokenKind _t72 = TokenKind_OStarEq;
+        bool _t73 = (kind == _t72);
+        _sc70 = _t73;
+    }
+    bool _sc74 = false;
+    _sc74 = _sc70;
+    bool _t75 = (!_sc74);
+    if (_t75) {
+        TokenKind _t76 = TokenKind_OSlashEq;
+        bool _t77 = (kind == _t76);
+        _sc74 = _t77;
+    }
+    bool _sc78 = false;
+    _sc78 = _sc74;
+    bool _t79 = (!_sc78);
+    if (_t79) {
+        TokenKind _t80 = TokenKind_PLt;
+        bool _t81 = (kind == _t80);
+        _sc78 = _t81;
+    }
+    bool _sc82 = false;
+    _sc82 = _sc78;
+    bool _t83 = (!_sc82);
+    if (_t83) {
+        TokenKind _t84 = TokenKind_PGt;
+        bool _t85 = (kind == _t84);
+        _sc82 = _t85;
+    }
+    bool _sc86 = false;
+    _sc86 = _sc82;
+    bool _t87 = (!_sc86);
+    if (_t87) {
+        TokenKind _t88 = TokenKind_PComma;
+        bool _t89 = (kind == _t88);
+        _sc86 = _t89;
+    }
+    bool _sc90 = false;
+    _sc90 = _sc86;
+    bool _t91 = (!_sc90);
+    if (_t91) {
+        TokenKind _t92 = TokenKind_PArrow;
+        bool _t93 = (kind == _t92);
+        _sc90 = _t93;
+    }
+    bool _sc94 = false;
+    _sc94 = _sc90;
+    bool _t95 = (!_sc94);
+    if (_t95) {
+        TokenKind _t96 = TokenKind_PFatArrow;
+        bool _t97 = (kind == _t96);
+        _sc94 = _t97;
+    }
+    return _sc94;
 }
 
 Lexer* new_lexer(lyric_string src_text, Sym* filename) {
@@ -20694,10 +20904,16 @@ Token* Lexer_next(Lexer* self) {
     if (_t2) {
         self->peeked_token = NULL;
         Token* _t3 = lyric_unwrap_class(p);
-        return _t3;
+        TokenKind _t4 = _t3->kind;
+        self->last_kind = _t4;
+        Token* _t5 = lyric_unwrap_class(p);
+        return _t5;
     }
-    Token* _t4 = Lexer_scan(self);
-    return _t4;
+    Token* _t6 = Lexer_scan(self);
+    Token* tok = _t6;
+    TokenKind _t7 = tok->kind;
+    self->last_kind = _t7;
+    return tok;
 }
 
 bool Lexer_scan_escape(Lexer* self, StringBuilder* buf) {
@@ -21361,378 +21577,386 @@ Token* Lexer_scan(Lexer* self) {
         }
         int32_t _t78 = self->bracket_depth;
         bool _t79 = (_t78 > 0);
-        if (_t79) {
-            Token* _t80 = Lexer_scan(self);
-            return _t80;
+        bool _sc80 = false;
+        _sc80 = _t79;
+        bool _t81 = (!_sc80);
+        if (_t81) {
+            TokenKind _t82 = self->last_kind;
+            bool _t83 = is_binary_op(_t82);
+            _sc80 = _t83;
         }
-        TokenKind _t81 = TokenKind_SNewline;
-        Pos _t82 = Lexer_current_pos(self);
-        Token* _t83 = make_token(_t81, LYRIC_STR("\n"), start, _t82);
-        return _t83;
-    }
-    bool _t84 = (ch == 34U);
-    if (_t84) {
-        Token* _t85 = Lexer_scan_string(self, start);
-        return _t85;
-    }
-    bool _t86 = (ch == 39U);
-    if (_t86) {
-        Token* _t87 = Lexer_scan_char_lit(self, start);
+        if (_sc80) {
+            Token* _t84 = Lexer_scan(self);
+            return _t84;
+        }
+        TokenKind _t85 = TokenKind_SNewline;
+        Pos _t86 = Lexer_current_pos(self);
+        Token* _t87 = make_token(_t85, LYRIC_STR("\n"), start, _t86);
         return _t87;
     }
-    bool _t88 = (ch == 96U);
+    bool _t88 = (ch == 34U);
     if (_t88) {
-        Token* _t89 = Lexer_scan_backtick_sym(self, start);
+        Token* _t89 = Lexer_scan_string(self, start);
         return _t89;
     }
-    bool _t90 = is_digit(ch);
+    bool _t90 = (ch == 39U);
     if (_t90) {
-        Token* _t91 = Lexer_scan_number(self, start);
+        Token* _t91 = Lexer_scan_char_lit(self, start);
         return _t91;
     }
-    bool _t92 = (ch == 95U);
-    bool _sc93 = false;
-    _sc93 = _t92;
-    bool _t94 = (!_sc93);
-    if (_t94) {
-        bool _t95 = is_letter(ch);
-        _sc93 = _t95;
+    bool _t92 = (ch == 96U);
+    if (_t92) {
+        Token* _t93 = Lexer_scan_backtick_sym(self, start);
+        return _t93;
     }
-    if (_sc93) {
-        Token* _t96 = Lexer_scan_ident(self, start);
-        return _t96;
+    bool _t94 = is_digit(ch);
+    if (_t94) {
+        Token* _t95 = Lexer_scan_number(self, start);
+        return _t95;
+    }
+    bool _t96 = (ch == 95U);
+    bool _sc97 = false;
+    _sc97 = _t96;
+    bool _t98 = (!_sc97);
+    if (_t98) {
+        bool _t99 = is_letter(ch);
+        _sc97 = _t99;
+    }
+    if (_sc97) {
+        Token* _t100 = Lexer_scan_ident(self, start);
+        return _t100;
     }
     Lexer_advance(self);
-    bool _t98 = (ch == 40U);
-    if (_t98) {
-        int32_t _t99 = self->bracket_depth;
-        int32_t _t100 = (_t99 + 1);
-        self->bracket_depth = _t100;
-        TokenKind _t101 = TokenKind_PLParen;
-        Pos _t102 = Lexer_current_pos(self);
-        Token* _t103 = make_token(_t101, LYRIC_STR("("), start, _t102);
-        return _t103;
+    bool _t102 = (ch == 40U);
+    if (_t102) {
+        int32_t _t103 = self->bracket_depth;
+        int32_t _t104 = (_t103 + 1);
+        self->bracket_depth = _t104;
+        TokenKind _t105 = TokenKind_PLParen;
+        Pos _t106 = Lexer_current_pos(self);
+        Token* _t107 = make_token(_t105, LYRIC_STR("("), start, _t106);
+        return _t107;
     }
-    bool _t104 = (ch == 41U);
-    if (_t104) {
-        int32_t _t105 = self->bracket_depth;
-        int32_t _t106 = (_t105 - 1);
-        self->bracket_depth = _t106;
-        TokenKind _t107 = TokenKind_PRParen;
-        Pos _t108 = Lexer_current_pos(self);
-        Token* _t109 = make_token(_t107, LYRIC_STR(")"), start, _t108);
-        return _t109;
-    }
-    bool _t110 = (ch == 123U);
-    if (_t110) {
-        TokenKind _t111 = TokenKind_PLBrace;
+    bool _t108 = (ch == 41U);
+    if (_t108) {
+        int32_t _t109 = self->bracket_depth;
+        int32_t _t110 = (_t109 - 1);
+        self->bracket_depth = _t110;
+        TokenKind _t111 = TokenKind_PRParen;
         Pos _t112 = Lexer_current_pos(self);
-        Token* _t113 = make_token(_t111, LYRIC_STR("{"), start, _t112);
+        Token* _t113 = make_token(_t111, LYRIC_STR(")"), start, _t112);
         return _t113;
     }
-    bool _t114 = (ch == 125U);
+    bool _t114 = (ch == 123U);
     if (_t114) {
-        TokenKind _t115 = TokenKind_PRBrace;
+        TokenKind _t115 = TokenKind_PLBrace;
         Pos _t116 = Lexer_current_pos(self);
-        Token* _t117 = make_token(_t115, LYRIC_STR("}"), start, _t116);
+        Token* _t117 = make_token(_t115, LYRIC_STR("{"), start, _t116);
         return _t117;
     }
-    bool _t118 = (ch == 91U);
+    bool _t118 = (ch == 125U);
     if (_t118) {
-        int32_t _t119 = self->bracket_depth;
-        int32_t _t120 = (_t119 + 1);
-        self->bracket_depth = _t120;
-        TokenKind _t121 = TokenKind_PLBracket;
-        Pos _t122 = Lexer_current_pos(self);
-        Token* _t123 = make_token(_t121, LYRIC_STR("["), start, _t122);
-        return _t123;
+        TokenKind _t119 = TokenKind_PRBrace;
+        Pos _t120 = Lexer_current_pos(self);
+        Token* _t121 = make_token(_t119, LYRIC_STR("}"), start, _t120);
+        return _t121;
     }
-    bool _t124 = (ch == 93U);
-    if (_t124) {
-        int32_t _t125 = self->bracket_depth;
-        int32_t _t126 = (_t125 - 1);
-        self->bracket_depth = _t126;
-        TokenKind _t127 = TokenKind_PRBracket;
-        Pos _t128 = Lexer_current_pos(self);
-        Token* _t129 = make_token(_t127, LYRIC_STR("]"), start, _t128);
-        return _t129;
+    bool _t122 = (ch == 91U);
+    if (_t122) {
+        int32_t _t123 = self->bracket_depth;
+        int32_t _t124 = (_t123 + 1);
+        self->bracket_depth = _t124;
+        TokenKind _t125 = TokenKind_PLBracket;
+        Pos _t126 = Lexer_current_pos(self);
+        Token* _t127 = make_token(_t125, LYRIC_STR("["), start, _t126);
+        return _t127;
     }
-    bool _t130 = (ch == 44U);
-    if (_t130) {
-        TokenKind _t131 = TokenKind_PComma;
+    bool _t128 = (ch == 93U);
+    if (_t128) {
+        int32_t _t129 = self->bracket_depth;
+        int32_t _t130 = (_t129 - 1);
+        self->bracket_depth = _t130;
+        TokenKind _t131 = TokenKind_PRBracket;
         Pos _t132 = Lexer_current_pos(self);
-        Token* _t133 = make_token(_t131, LYRIC_STR(","), start, _t132);
+        Token* _t133 = make_token(_t131, LYRIC_STR("]"), start, _t132);
         return _t133;
     }
-    bool _t134 = (ch == 58U);
+    bool _t134 = (ch == 44U);
     if (_t134) {
-        TokenKind _t135 = TokenKind_PColon;
+        TokenKind _t135 = TokenKind_PComma;
         Pos _t136 = Lexer_current_pos(self);
-        Token* _t137 = make_token(_t135, LYRIC_STR(":"), start, _t136);
+        Token* _t137 = make_token(_t135, LYRIC_STR(","), start, _t136);
         return _t137;
     }
-    bool _t138 = (ch == 46U);
+    bool _t138 = (ch == 58U);
     if (_t138) {
-        TokenKind _t139 = TokenKind_PDot;
+        TokenKind _t139 = TokenKind_PColon;
         Pos _t140 = Lexer_current_pos(self);
-        Token* _t141 = make_token(_t139, LYRIC_STR("."), start, _t140);
+        Token* _t141 = make_token(_t139, LYRIC_STR(":"), start, _t140);
         return _t141;
     }
-    bool _t142 = (ch == 63U);
+    bool _t142 = (ch == 46U);
     if (_t142) {
-        TokenKind _t143 = TokenKind_PQuestion;
+        TokenKind _t143 = TokenKind_PDot;
         Pos _t144 = Lexer_current_pos(self);
-        Token* _t145 = make_token(_t143, LYRIC_STR("?"), start, _t144);
+        Token* _t145 = make_token(_t143, LYRIC_STR("."), start, _t144);
         return _t145;
     }
-    bool _t146 = (ch == 94U);
+    bool _t146 = (ch == 63U);
     if (_t146) {
-        TokenKind _t147 = TokenKind_OCaret;
+        TokenKind _t147 = TokenKind_PQuestion;
         Pos _t148 = Lexer_current_pos(self);
-        Token* _t149 = make_token(_t147, LYRIC_STR("^"), start, _t148);
+        Token* _t149 = make_token(_t147, LYRIC_STR("?"), start, _t148);
         return _t149;
     }
-    bool _t150 = (ch == 37U);
+    bool _t150 = (ch == 94U);
     if (_t150) {
-        TokenKind _t151 = TokenKind_OPercent;
+        TokenKind _t151 = TokenKind_OCaret;
         Pos _t152 = Lexer_current_pos(self);
-        Token* _t153 = make_token(_t151, LYRIC_STR("%"), start, _t152);
+        Token* _t153 = make_token(_t151, LYRIC_STR("^"), start, _t152);
         return _t153;
     }
-    bool _t154 = (ch == 33U);
+    bool _t154 = (ch == 37U);
     if (_t154) {
-        uint8_t _t155 = Lexer_peek_char(self);
-        bool _t156 = (_t155 == 61U);
-        if (_t156) {
-            uint8_t _t157 = Lexer_advance(self);
-            _t157;
-            TokenKind _t158 = TokenKind_OBangEq;
-            Pos _t159 = Lexer_current_pos(self);
-            Token* _t160 = make_token(_t158, LYRIC_STR("!="), start, _t159);
-            return _t160;
-        }
-        TokenKind _t161 = TokenKind_OBang;
-        Pos _t162 = Lexer_current_pos(self);
-        Token* _t163 = make_token(_t161, LYRIC_STR("!"), start, _t162);
-        return _t163;
+        TokenKind _t155 = TokenKind_OPercent;
+        Pos _t156 = Lexer_current_pos(self);
+        Token* _t157 = make_token(_t155, LYRIC_STR("%"), start, _t156);
+        return _t157;
     }
-    bool _t164 = (ch == 124U);
-    if (_t164) {
-        uint8_t _t165 = Lexer_peek_char(self);
-        bool _t166 = (_t165 == 124U);
-        if (_t166) {
-            uint8_t _t167 = Lexer_advance(self);
-            _t167;
-            TokenKind _t168 = TokenKind_OPipePipe;
-            Pos _t169 = Lexer_current_pos(self);
-            Token* _t170 = make_token(_t168, LYRIC_STR("||"), start, _t169);
-            return _t170;
+    bool _t158 = (ch == 33U);
+    if (_t158) {
+        uint8_t _t159 = Lexer_peek_char(self);
+        bool _t160 = (_t159 == 61U);
+        if (_t160) {
+            uint8_t _t161 = Lexer_advance(self);
+            _t161;
+            TokenKind _t162 = TokenKind_OBangEq;
+            Pos _t163 = Lexer_current_pos(self);
+            Token* _t164 = make_token(_t162, LYRIC_STR("!="), start, _t163);
+            return _t164;
         }
-        TokenKind _t171 = TokenKind_PPipe;
-        Pos _t172 = Lexer_current_pos(self);
-        Token* _t173 = make_token(_t171, LYRIC_STR("|"), start, _t172);
-        return _t173;
+        TokenKind _t165 = TokenKind_OBang;
+        Pos _t166 = Lexer_current_pos(self);
+        Token* _t167 = make_token(_t165, LYRIC_STR("!"), start, _t166);
+        return _t167;
     }
-    bool _t174 = (ch == 38U);
-    if (_t174) {
-        uint8_t _t175 = Lexer_peek_char(self);
-        bool _t176 = (_t175 == 38U);
-        if (_t176) {
-            uint8_t _t177 = Lexer_advance(self);
-            _t177;
-            TokenKind _t178 = TokenKind_OAmpAmp;
-            Pos _t179 = Lexer_current_pos(self);
-            Token* _t180 = make_token(_t178, LYRIC_STR("&&"), start, _t179);
-            return _t180;
+    bool _t168 = (ch == 124U);
+    if (_t168) {
+        uint8_t _t169 = Lexer_peek_char(self);
+        bool _t170 = (_t169 == 124U);
+        if (_t170) {
+            uint8_t _t171 = Lexer_advance(self);
+            _t171;
+            TokenKind _t172 = TokenKind_OPipePipe;
+            Pos _t173 = Lexer_current_pos(self);
+            Token* _t174 = make_token(_t172, LYRIC_STR("||"), start, _t173);
+            return _t174;
         }
-        TokenKind _t181 = TokenKind_OAmp;
-        Pos _t182 = Lexer_current_pos(self);
-        Token* _t183 = make_token(_t181, LYRIC_STR("&"), start, _t182);
-        return _t183;
+        TokenKind _t175 = TokenKind_PPipe;
+        Pos _t176 = Lexer_current_pos(self);
+        Token* _t177 = make_token(_t175, LYRIC_STR("|"), start, _t176);
+        return _t177;
     }
-    bool _t184 = (ch == 60U);
-    if (_t184) {
-        uint8_t _t185 = Lexer_peek_char(self);
-        bool _t186 = (_t185 == 61U);
-        if (_t186) {
-            uint8_t _t187 = Lexer_advance(self);
-            _t187;
-            TokenKind _t188 = TokenKind_OLtEq;
-            Pos _t189 = Lexer_current_pos(self);
-            Token* _t190 = make_token(_t188, LYRIC_STR("<="), start, _t189);
-            return _t190;
+    bool _t178 = (ch == 38U);
+    if (_t178) {
+        uint8_t _t179 = Lexer_peek_char(self);
+        bool _t180 = (_t179 == 38U);
+        if (_t180) {
+            uint8_t _t181 = Lexer_advance(self);
+            _t181;
+            TokenKind _t182 = TokenKind_OAmpAmp;
+            Pos _t183 = Lexer_current_pos(self);
+            Token* _t184 = make_token(_t182, LYRIC_STR("&&"), start, _t183);
+            return _t184;
         }
-        uint8_t _t191 = Lexer_peek_char(self);
-        bool _t192 = (_t191 == 60U);
-        if (_t192) {
-            uint8_t _t193 = Lexer_advance(self);
-            _t193;
-            TokenKind _t194 = TokenKind_OShl;
-            Pos _t195 = Lexer_current_pos(self);
-            Token* _t196 = make_token(_t194, LYRIC_STR("<<"), start, _t195);
-            return _t196;
-        }
-        uint8_t _t197 = Lexer_peek_char(self);
-        bool _t198 = (_t197 == 45U);
-        bool _sc199 = false;
-        _sc199 = _t198;
-        if (_sc199) {
-            uint8_t _t200 = Lexer_peek_at(self, 1);
-            bool _t201 = (_t200 == 62U);
-            _sc199 = _t201;
-        }
-        if (_sc199) {
-            uint8_t _t202 = Lexer_advance(self);
-            _t202;
-            uint8_t _t203 = Lexer_advance(self);
-            _t203;
-            TokenKind _t204 = TokenKind_PBiArrow;
-            Pos _t205 = Lexer_current_pos(self);
-            Token* _t206 = make_token(_t204, LYRIC_STR("<->"), start, _t205);
-            return _t206;
-        }
-        TokenKind _t207 = TokenKind_PLt;
-        Pos _t208 = Lexer_current_pos(self);
-        Token* _t209 = make_token(_t207, LYRIC_STR("<"), start, _t208);
-        return _t209;
+        TokenKind _t185 = TokenKind_OAmp;
+        Pos _t186 = Lexer_current_pos(self);
+        Token* _t187 = make_token(_t185, LYRIC_STR("&"), start, _t186);
+        return _t187;
     }
-    bool _t210 = (ch == 62U);
-    if (_t210) {
-        uint8_t _t211 = Lexer_peek_char(self);
-        bool _t212 = (_t211 == 61U);
-        if (_t212) {
-            uint8_t _t213 = Lexer_advance(self);
-            _t213;
-            TokenKind _t214 = TokenKind_OGtEq;
-            Pos _t215 = Lexer_current_pos(self);
-            Token* _t216 = make_token(_t214, LYRIC_STR(">="), start, _t215);
-            return _t216;
+    bool _t188 = (ch == 60U);
+    if (_t188) {
+        uint8_t _t189 = Lexer_peek_char(self);
+        bool _t190 = (_t189 == 61U);
+        if (_t190) {
+            uint8_t _t191 = Lexer_advance(self);
+            _t191;
+            TokenKind _t192 = TokenKind_OLtEq;
+            Pos _t193 = Lexer_current_pos(self);
+            Token* _t194 = make_token(_t192, LYRIC_STR("<="), start, _t193);
+            return _t194;
         }
-        uint8_t _t217 = Lexer_peek_char(self);
-        bool _t218 = (_t217 == 62U);
-        if (_t218) {
-            uint8_t _t219 = Lexer_advance(self);
-            _t219;
-            TokenKind _t220 = TokenKind_OShr;
-            Pos _t221 = Lexer_current_pos(self);
-            Token* _t222 = make_token(_t220, LYRIC_STR(">>"), start, _t221);
-            return _t222;
+        uint8_t _t195 = Lexer_peek_char(self);
+        bool _t196 = (_t195 == 60U);
+        if (_t196) {
+            uint8_t _t197 = Lexer_advance(self);
+            _t197;
+            TokenKind _t198 = TokenKind_OShl;
+            Pos _t199 = Lexer_current_pos(self);
+            Token* _t200 = make_token(_t198, LYRIC_STR("<<"), start, _t199);
+            return _t200;
         }
-        TokenKind _t223 = TokenKind_PGt;
-        Pos _t224 = Lexer_current_pos(self);
-        Token* _t225 = make_token(_t223, LYRIC_STR(">"), start, _t224);
-        return _t225;
+        uint8_t _t201 = Lexer_peek_char(self);
+        bool _t202 = (_t201 == 45U);
+        bool _sc203 = false;
+        _sc203 = _t202;
+        if (_sc203) {
+            uint8_t _t204 = Lexer_peek_at(self, 1);
+            bool _t205 = (_t204 == 62U);
+            _sc203 = _t205;
+        }
+        if (_sc203) {
+            uint8_t _t206 = Lexer_advance(self);
+            _t206;
+            uint8_t _t207 = Lexer_advance(self);
+            _t207;
+            TokenKind _t208 = TokenKind_PBiArrow;
+            Pos _t209 = Lexer_current_pos(self);
+            Token* _t210 = make_token(_t208, LYRIC_STR("<->"), start, _t209);
+            return _t210;
+        }
+        TokenKind _t211 = TokenKind_PLt;
+        Pos _t212 = Lexer_current_pos(self);
+        Token* _t213 = make_token(_t211, LYRIC_STR("<"), start, _t212);
+        return _t213;
     }
-    bool _t226 = (ch == 45U);
-    if (_t226) {
-        uint8_t _t227 = Lexer_peek_char(self);
-        bool _t228 = (_t227 == 62U);
-        if (_t228) {
-            uint8_t _t229 = Lexer_advance(self);
-            _t229;
-            TokenKind _t230 = TokenKind_PArrow;
-            Pos _t231 = Lexer_current_pos(self);
-            Token* _t232 = make_token(_t230, LYRIC_STR("->"), start, _t231);
-            return _t232;
+    bool _t214 = (ch == 62U);
+    if (_t214) {
+        uint8_t _t215 = Lexer_peek_char(self);
+        bool _t216 = (_t215 == 61U);
+        if (_t216) {
+            uint8_t _t217 = Lexer_advance(self);
+            _t217;
+            TokenKind _t218 = TokenKind_OGtEq;
+            Pos _t219 = Lexer_current_pos(self);
+            Token* _t220 = make_token(_t218, LYRIC_STR(">="), start, _t219);
+            return _t220;
         }
-        uint8_t _t233 = Lexer_peek_char(self);
-        bool _t234 = (_t233 == 61U);
-        if (_t234) {
-            uint8_t _t235 = Lexer_advance(self);
-            _t235;
-            TokenKind _t236 = TokenKind_OMinusEq;
-            Pos _t237 = Lexer_current_pos(self);
-            Token* _t238 = make_token(_t236, LYRIC_STR("-="), start, _t237);
-            return _t238;
+        uint8_t _t221 = Lexer_peek_char(self);
+        bool _t222 = (_t221 == 62U);
+        if (_t222) {
+            uint8_t _t223 = Lexer_advance(self);
+            _t223;
+            TokenKind _t224 = TokenKind_OShr;
+            Pos _t225 = Lexer_current_pos(self);
+            Token* _t226 = make_token(_t224, LYRIC_STR(">>"), start, _t225);
+            return _t226;
         }
-        TokenKind _t239 = TokenKind_OMinus;
-        Pos _t240 = Lexer_current_pos(self);
-        Token* _t241 = make_token(_t239, LYRIC_STR("-"), start, _t240);
-        return _t241;
+        TokenKind _t227 = TokenKind_PGt;
+        Pos _t228 = Lexer_current_pos(self);
+        Token* _t229 = make_token(_t227, LYRIC_STR(">"), start, _t228);
+        return _t229;
     }
-    bool _t242 = (ch == 43U);
-    if (_t242) {
-        uint8_t _t243 = Lexer_peek_char(self);
-        bool _t244 = (_t243 == 61U);
-        if (_t244) {
-            uint8_t _t245 = Lexer_advance(self);
-            _t245;
-            TokenKind _t246 = TokenKind_OPlusEq;
-            Pos _t247 = Lexer_current_pos(self);
-            Token* _t248 = make_token(_t246, LYRIC_STR("+="), start, _t247);
-            return _t248;
+    bool _t230 = (ch == 45U);
+    if (_t230) {
+        uint8_t _t231 = Lexer_peek_char(self);
+        bool _t232 = (_t231 == 62U);
+        if (_t232) {
+            uint8_t _t233 = Lexer_advance(self);
+            _t233;
+            TokenKind _t234 = TokenKind_PArrow;
+            Pos _t235 = Lexer_current_pos(self);
+            Token* _t236 = make_token(_t234, LYRIC_STR("->"), start, _t235);
+            return _t236;
         }
-        TokenKind _t249 = TokenKind_OPlus;
-        Pos _t250 = Lexer_current_pos(self);
-        Token* _t251 = make_token(_t249, LYRIC_STR("+"), start, _t250);
-        return _t251;
+        uint8_t _t237 = Lexer_peek_char(self);
+        bool _t238 = (_t237 == 61U);
+        if (_t238) {
+            uint8_t _t239 = Lexer_advance(self);
+            _t239;
+            TokenKind _t240 = TokenKind_OMinusEq;
+            Pos _t241 = Lexer_current_pos(self);
+            Token* _t242 = make_token(_t240, LYRIC_STR("-="), start, _t241);
+            return _t242;
+        }
+        TokenKind _t243 = TokenKind_OMinus;
+        Pos _t244 = Lexer_current_pos(self);
+        Token* _t245 = make_token(_t243, LYRIC_STR("-"), start, _t244);
+        return _t245;
     }
-    bool _t252 = (ch == 42U);
-    if (_t252) {
-        uint8_t _t253 = Lexer_peek_char(self);
-        bool _t254 = (_t253 == 61U);
-        if (_t254) {
-            uint8_t _t255 = Lexer_advance(self);
-            _t255;
-            TokenKind _t256 = TokenKind_OStarEq;
-            Pos _t257 = Lexer_current_pos(self);
-            Token* _t258 = make_token(_t256, LYRIC_STR("*="), start, _t257);
-            return _t258;
+    bool _t246 = (ch == 43U);
+    if (_t246) {
+        uint8_t _t247 = Lexer_peek_char(self);
+        bool _t248 = (_t247 == 61U);
+        if (_t248) {
+            uint8_t _t249 = Lexer_advance(self);
+            _t249;
+            TokenKind _t250 = TokenKind_OPlusEq;
+            Pos _t251 = Lexer_current_pos(self);
+            Token* _t252 = make_token(_t250, LYRIC_STR("+="), start, _t251);
+            return _t252;
         }
-        TokenKind _t259 = TokenKind_OStar;
-        Pos _t260 = Lexer_current_pos(self);
-        Token* _t261 = make_token(_t259, LYRIC_STR("*"), start, _t260);
-        return _t261;
+        TokenKind _t253 = TokenKind_OPlus;
+        Pos _t254 = Lexer_current_pos(self);
+        Token* _t255 = make_token(_t253, LYRIC_STR("+"), start, _t254);
+        return _t255;
     }
-    bool _t262 = (ch == 47U);
-    if (_t262) {
-        uint8_t _t263 = Lexer_peek_char(self);
-        bool _t264 = (_t263 == 61U);
-        if (_t264) {
-            uint8_t _t265 = Lexer_advance(self);
-            _t265;
-            TokenKind _t266 = TokenKind_OSlashEq;
-            Pos _t267 = Lexer_current_pos(self);
-            Token* _t268 = make_token(_t266, LYRIC_STR("/="), start, _t267);
-            return _t268;
+    bool _t256 = (ch == 42U);
+    if (_t256) {
+        uint8_t _t257 = Lexer_peek_char(self);
+        bool _t258 = (_t257 == 61U);
+        if (_t258) {
+            uint8_t _t259 = Lexer_advance(self);
+            _t259;
+            TokenKind _t260 = TokenKind_OStarEq;
+            Pos _t261 = Lexer_current_pos(self);
+            Token* _t262 = make_token(_t260, LYRIC_STR("*="), start, _t261);
+            return _t262;
         }
-        TokenKind _t269 = TokenKind_OSlash;
-        Pos _t270 = Lexer_current_pos(self);
-        Token* _t271 = make_token(_t269, LYRIC_STR("/"), start, _t270);
-        return _t271;
+        TokenKind _t263 = TokenKind_OStar;
+        Pos _t264 = Lexer_current_pos(self);
+        Token* _t265 = make_token(_t263, LYRIC_STR("*"), start, _t264);
+        return _t265;
     }
-    bool _t272 = (ch == 61U);
-    if (_t272) {
-        uint8_t _t273 = Lexer_peek_char(self);
-        bool _t274 = (_t273 == 61U);
-        if (_t274) {
-            uint8_t _t275 = Lexer_advance(self);
-            _t275;
-            TokenKind _t276 = TokenKind_OEqEq;
-            Pos _t277 = Lexer_current_pos(self);
-            Token* _t278 = make_token(_t276, LYRIC_STR("=="), start, _t277);
-            return _t278;
+    bool _t266 = (ch == 47U);
+    if (_t266) {
+        uint8_t _t267 = Lexer_peek_char(self);
+        bool _t268 = (_t267 == 61U);
+        if (_t268) {
+            uint8_t _t269 = Lexer_advance(self);
+            _t269;
+            TokenKind _t270 = TokenKind_OSlashEq;
+            Pos _t271 = Lexer_current_pos(self);
+            Token* _t272 = make_token(_t270, LYRIC_STR("/="), start, _t271);
+            return _t272;
         }
-        uint8_t _t279 = Lexer_peek_char(self);
-        bool _t280 = (_t279 == 62U);
-        if (_t280) {
-            uint8_t _t281 = Lexer_advance(self);
-            _t281;
-            TokenKind _t282 = TokenKind_PFatArrow;
-            Pos _t283 = Lexer_current_pos(self);
-            Token* _t284 = make_token(_t282, LYRIC_STR("=>"), start, _t283);
-            return _t284;
-        }
-        TokenKind _t285 = TokenKind_OAssign;
-        Pos _t286 = Lexer_current_pos(self);
-        Token* _t287 = make_token(_t285, LYRIC_STR("="), start, _t286);
-        return _t287;
+        TokenKind _t273 = TokenKind_OSlash;
+        Pos _t274 = Lexer_current_pos(self);
+        Token* _t275 = make_token(_t273, LYRIC_STR("/"), start, _t274);
+        return _t275;
     }
-    TokenKind _t288 = TokenKind_LIdent;
-    lyric_string _t289 = lyric_char_to_string(ch);
-    Pos _t290 = Lexer_current_pos(self);
-    Token* _t291 = make_token(_t288, _t289, start, _t290);
-    return _t291;
+    bool _t276 = (ch == 61U);
+    if (_t276) {
+        uint8_t _t277 = Lexer_peek_char(self);
+        bool _t278 = (_t277 == 61U);
+        if (_t278) {
+            uint8_t _t279 = Lexer_advance(self);
+            _t279;
+            TokenKind _t280 = TokenKind_OEqEq;
+            Pos _t281 = Lexer_current_pos(self);
+            Token* _t282 = make_token(_t280, LYRIC_STR("=="), start, _t281);
+            return _t282;
+        }
+        uint8_t _t283 = Lexer_peek_char(self);
+        bool _t284 = (_t283 == 62U);
+        if (_t284) {
+            uint8_t _t285 = Lexer_advance(self);
+            _t285;
+            TokenKind _t286 = TokenKind_PFatArrow;
+            Pos _t287 = Lexer_current_pos(self);
+            Token* _t288 = make_token(_t286, LYRIC_STR("=>"), start, _t287);
+            return _t288;
+        }
+        TokenKind _t289 = TokenKind_OAssign;
+        Pos _t290 = Lexer_current_pos(self);
+        Token* _t291 = make_token(_t289, LYRIC_STR("="), start, _t290);
+        return _t291;
+    }
+    TokenKind _t292 = TokenKind_LIdent;
+    lyric_string _t293 = lyric_char_to_string(ch);
+    Pos _t294 = Lexer_current_pos(self);
+    Token* _t295 = make_token(_t292, _t293, start, _t294);
+    return _t295;
 }
 
 void Lexer_destroy(Lexer* self) {
@@ -22496,65 +22720,65 @@ LyricResult_ImportDeclptr Parser_parse_import(Parser* self) {
     if (_t7) {
         Token* _t8 = Parser_next(self);
         Token* path = _t8;
-        lyric_string _t9 = path->text;
-        Span _t10 = Parser_make_span(self, start);
-        ImportDecl* _t11 = _lyric_slab_alloc_ImportDecl();
-        _t11->path = _t9;
-        _t11->span = _t10;
-        return lyric_ok(_t11, LyricResult_ImportDeclptr);
+        Span _t9 = Parser_make_span(self, start);
+        lyric_string _t10 = path->text;
+        lyric_string _t11 = path->text;
+        lyric_string _t12 = lyric_sprintf("import \"%.*s\" requires an alias: import <name> from \"%.*s\"", (int)_t10.len, (const char*)_t10.data, (int)_t11.len, (const char*)_t11.data);
+        Error* _t13 = Parser_make_error(self, _t9, _t12);
+        return lyric_err((const char*)_t13->msg.data, LyricResult_ImportDeclptr);
     }
-    TokenKind _t12 = TokenKind_LIdent;
-    LyricResult_Tokenptr _multi_9010 = Parser_expect(self, _t12);
-    Token* _t13_val = _multi_9010.value;
-    const char* _t13_err = _multi_9010.error;
-    const char* _t14 = _t13_err;
-    bool _t15 = (_t14 == NULL);
-    bool _t16 = (!_t15);
-    if (_t16) {
-        return lyric_err(_t14, LyricResult_ImportDeclptr);
+    TokenKind _t14 = TokenKind_LIdent;
+    LyricResult_Tokenptr _multi_9010 = Parser_expect(self, _t14);
+    Token* _t15_val = _multi_9010.value;
+    const char* _t15_err = _multi_9010.error;
+    const char* _t16 = _t15_err;
+    bool _t17 = (_t16 == NULL);
+    bool _t18 = (!_t17);
+    if (_t18) {
+        return lyric_err(_t16, LyricResult_ImportDeclptr);
     }
-    Token* _t17 = _t13_val;
-    Token* alias = _t17;
-    Token* _t18 = Parser_peek(self);
-    TokenKind _t19 = _t18->kind;
-    TokenKind _t20 = TokenKind_KFrom;
-    bool _t21 = (_t19 == _t20);
-    if (_t21) {
-        Token* _t22 = Parser_next(self);
-        _t22;
-        TokenKind _t23 = TokenKind_LStringLit;
-        LyricResult_Tokenptr _t24 = Parser_expect(self, _t23);
-        const char* _t25 = _t24.error;
-        bool _t26 = (_t25 == NULL);
-        bool _t27 = (!_t26);
-        if (_t27) {
-            return lyric_err(_t25, LyricResult_ImportDeclptr);
+    Token* _t19 = _t15_val;
+    Token* alias = _t19;
+    Token* _t20 = Parser_peek(self);
+    TokenKind _t21 = _t20->kind;
+    TokenKind _t22 = TokenKind_KFrom;
+    bool _t23 = (_t21 == _t22);
+    if (_t23) {
+        Token* _t24 = Parser_next(self);
+        _t24;
+        TokenKind _t25 = TokenKind_LStringLit;
+        LyricResult_Tokenptr _t26 = Parser_expect(self, _t25);
+        const char* _t27 = _t26.error;
+        bool _t28 = (_t27 == NULL);
+        bool _t29 = (!_t28);
+        if (_t29) {
+            return lyric_err(_t27, LyricResult_ImportDeclptr);
         }
-        Token* _t28 = _t24.value;
-        Token* path = _t28;
-        Token* _t29 = lyric_unwrap_class(alias);
-        lyric_string _t30 = _t29->text;
-        Sym* _t31 = sym(_t30);
-        Token* _t32 = lyric_unwrap_class(path);
-        lyric_string _t33 = _t32->text;
-        Span _t34 = Parser_make_span(self, start);
-        ImportDecl* _t35 = _lyric_slab_alloc_ImportDecl();
-        _t35->alias = _t31;
-        _t35->path = _t33;
-        _t35->span = _t34;
-        return lyric_ok(_t35, LyricResult_ImportDeclptr);
+        Token* _t30 = _t26.value;
+        Token* path = _t30;
+        Token* _t31 = lyric_unwrap_class(alias);
+        lyric_string _t32 = _t31->text;
+        Sym* _t33 = sym(_t32);
+        Token* _t34 = lyric_unwrap_class(path);
+        lyric_string _t35 = _t34->text;
+        Span _t36 = Parser_make_span(self, start);
+        ImportDecl* _t37 = _lyric_slab_alloc_ImportDecl();
+        _t37->alias = _t33;
+        _t37->path = _t35;
+        _t37->span = _t36;
+        return lyric_ok(_t37, LyricResult_ImportDeclptr);
     }
-    Token* _t36 = lyric_unwrap_class(alias);
-    lyric_string _t37 = _t36->text;
-    Sym* _t38 = sym(_t37);
-    Token* _t39 = lyric_unwrap_class(alias);
-    lyric_string _t40 = _t39->text;
-    Span _t41 = Parser_make_span(self, start);
-    ImportDecl* _t42 = _lyric_slab_alloc_ImportDecl();
-    _t42->alias = _t38;
-    _t42->path = _t40;
-    _t42->span = _t41;
-    return lyric_ok(_t42, LyricResult_ImportDeclptr);
+    Token* _t38 = lyric_unwrap_class(alias);
+    lyric_string _t39 = _t38->text;
+    Sym* _t40 = sym(_t39);
+    Token* _t41 = lyric_unwrap_class(alias);
+    lyric_string _t42 = _t41->text;
+    Span _t43 = Parser_make_span(self, start);
+    ImportDecl* _t44 = _lyric_slab_alloc_ImportDecl();
+    _t44->alias = _t40;
+    _t44->path = _t42;
+    _t44->span = _t43;
+    return lyric_ok(_t44, LyricResult_ImportDeclptr);
 }
 
 LyricResult_TypeAliasDeclptr Parser_parse_type_alias(Parser* self) {
