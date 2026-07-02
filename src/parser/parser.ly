@@ -308,10 +308,7 @@ lyric parser {
     //   import ident from "path"   → alias=ident, path="path"
     if self.peek().kind == LStringLit {
       let path = self.next()
-      return (ImportDecl {
-        path: path.text,
-        span: self.make_span(start)
-      }, null)
+      return (null, self.make_error(self.make_span(start), f"import \"{path.text}\" requires an alias: import <name> from \"{path.text}\""))
     }
 
     let alias = self.expect(LIdent)?

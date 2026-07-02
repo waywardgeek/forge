@@ -514,9 +514,10 @@ lyric parser_tests {
   // ---- Import declarations ----
 
   func test_import() {
-    let b = tp_parse("lyric t { import \"fmt\" }")
+    let b = tp_parse("lyric t { import fmt from \"fmt\" }")
     assert_eq(len(b.imp.children), 1, "one import")
     assert_eq(b.imp.children[0].path, "fmt", "import path")
+    assert(b.imp.children[0].alias != null, "alias should be set")
   }
 
   // ---- Multiple items in one block ----
