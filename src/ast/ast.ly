@@ -37,6 +37,10 @@ lyric ast {
     Generator(elem: TypeExpr)
     Lock
     Unit
+    // Interface family member type: Iface.Member or brand.Member in type position.
+    // member_name == null means bare interface name (single-param case).
+    // brand == null means unbranded (the common case).
+    InterfaceType(iface_name: Sym, member_name: Sym?, brand: Sym?)
   }
 
   class TypeExpr {
@@ -186,6 +190,23 @@ lyric ast {
     span: Span
   }
 
+  // ---- Vtable layout (populated by checker, consumed by lowerer) ----
+
+  struct VtableSlot {
+    method_name: Sym?
+    family_param: Sym?      // which family member this slot belongs to
+    is_getter: bool         // true for field getter slots
+    is_setter: bool         // true for field setter slots
+  }
+
+  // Where clause on an interface declaration (Phase 4).
+  // `interface Foo<T> where T: Bar<T>` constrains T to satisfy Bar.
+  class InterfaceWhereClause {
+    interface_name: Sym?
+    type_args: [Sym]
+    span: Span
+  }
+
   class InterfaceDecl {
     name: Sym?
     is_public: bool
@@ -200,14 +221,21 @@ lyric ast {
     // destructors into the child with type-param substitution; child
     // wins on name collision. Default-bodied parent methods are also
     // copied with body deep-cloned and substituted.
+    // DEPRECATED: will be replaced by `where` clauses in Phase 6.
     extends_name: Sym?
     extends_args: [Sym]
+    // Vtable layout, populated by the checker, consumed by the lowerer.
+    // null until computed. Each slot maps to a function pointer in the
+    // per-(class, interface) vtable struct emitted by the C backend.
+    vtable_layout: [VtableSlot]?
     span: Span
   }
   relation ArrayList InterfaceDecl:itp owns [TypeParam:itp]
   relation ArrayList InterfaceDecl:im owns [FuncDecl:im]
   relation ArrayList InterfaceDecl:ifd owns [InterfaceFieldDecl:ifd]
   relation ArrayList InterfaceDecl:idb owns [DestructorBlock:idb]
+  // Where clauses for Phase 4. Empty until then.
+  relation ArrayList InterfaceDecl:iwc owns [InterfaceWhereClause:iwc]
 
   // ---- Impl blocks ----
 
@@ -226,6 +254,9 @@ lyric ast {
   class ImplBlock {
     interface_name: Sym?
     for_type: Sym?
+    // Optional brand/name for named impls (Level 2, Phase 3).
+    // null = anonymous impl (today's common case).
+    name: Sym?
     // Ownership annotation. Null means a plain impl (today's common
     // case: alias / fieldbind / inline mappings). Non-null means an
     // ownership-bearing impl whose hint interface declares hint shape
