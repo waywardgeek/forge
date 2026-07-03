@@ -36,6 +36,9 @@ lyric lir {
     TyAny
     TyTypeVar
     TyUnion
+    // Fat pointer type for interface dispatch. name = interface name,
+    // member_name on LType = family member, brand on LType = brand name.
+    TyInterfaceRef
   }
 
   struct LField {
@@ -64,6 +67,12 @@ lyric lir {
     is_permanent: bool
     is_owned: bool
     class_decl: LClassDecl?
+    // For TyInterfaceRef: which family member (e.g. "G" for Graph.G).
+    // Empty string for single-param interfaces.
+    member_name: string
+    // For TyInterfaceRef: brand name (e.g. "my_graph" for named impls).
+    // Empty string for unbranded (anonymous) interface types.
+    brand: string
   }
 
   // ==========================================================================
@@ -133,6 +142,10 @@ lyric lir {
     ExFormat
     ExSlabGet
     ExSlabAlloc
+    // Interface dispatch expressions (Phase 1+)
+    ExBoxInterface       // boxing coercion: (ly_iface){obj, &vtable}
+    ExUnboxInterface     // extract data pointer from fat pointer
+    ExVtableCall         // indirect call through vtable slot
   }
 
   permanent class LExpr {
@@ -432,6 +445,8 @@ lyric lir {
     StRefIncr
     StRefDecr
     StSliceRcRelease  // Release RC on each element of a slice before freeing
+    // Type assertion on interface values via vtable identity compare (Phase 1+)
+    StTypeAssert
   }
 
   permanent class LStmt {
@@ -662,11 +677,25 @@ lyric lir {
     return_type: LType?
   }
 
+  // Vtable slot descriptor for interface dispatch.
+  struct LVtableSlot {
+    name: string
+    family_param: string
+    func_ptr_type: LType?
+    is_getter: bool
+    is_setter: bool
+  }
+
   permanent class LInterfaceDecl {
     name: string
     type_params: [LTypeParam]
     methods: [LInterfaceMethod]
     is_exported: bool
+    // Which type params are family (receiver-position) vs value (Phase 4).
+    // Single-param interfaces have one entry. Multi-param: one per class-typed param.
+    family_params: [string]
+    // Ordered vtable slot list, populated by lowerer from checker's vtable_layout.
+    vtable_slots: [LVtableSlot]
   }
 
   struct LRelationalConstraint {
