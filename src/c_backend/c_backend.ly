@@ -5474,7 +5474,9 @@ pub func emit_c(prog: LProgram?) -> string {
   let ifaces = prog_ref.interfaces
   i = 0
   while i < len(ifaces) {
-    if len(ifaces[i].type_params) > 0 {
+    // Skip multi-param interfaces (Phase 2+ handles those via monomorphization).
+    // Zero-param and single-param interfaces are emitted as erased fat-pointer types.
+    if len(ifaces[i].type_params) > 1 {
       i = i + 1
       continue
     }
@@ -5517,7 +5519,10 @@ pub func emit_c(prog: LProgram?) -> string {
       let iface_name = classes[i].implements[j]
       let iface_entry = g.iface_by_name!.get(sym(iface_name))
       if !isnull(iface_entry) {
-        g.line(f"static const {iface_name}_vtable {class_name}_as_{iface_name};")
+        // Only emit vtable instances for erased interfaces (≤ 1 type param)
+        if len(iface_entry!.value.type_params) <= 1 {
+          g.line(f"static const {iface_name}_vtable {class_name}_as_{iface_name};")
+        }
       }
       j = j + 1
     }
@@ -5574,6 +5579,8 @@ pub func emit_c(prog: LProgram?) -> string {
       let iface_entry = g.iface_by_name!.get(sym(iface_name))
       if !isnull(iface_entry) {
         let iface = iface_entry!.value
+        // Only emit vtable definitions for erased interfaces (≤ 1 type param)
+        if len(iface.type_params) <= 1 {
         g.line(f"static const {iface_name}_vtable {class_name}_as_{iface_name} = {{")
         g.indent = g.indent + 1
         let mut k = 0
@@ -5594,6 +5601,7 @@ pub func emit_c(prog: LProgram?) -> string {
         }
         g.indent = g.indent - 1
         g.line("};")
+        }
       }
       j = j + 1
     }
