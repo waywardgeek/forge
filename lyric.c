@@ -34,6 +34,7 @@ static int _lyric_test_active;
 
 typedef struct Pos Pos;
 typedef struct Span Span;
+typedef struct VtableSlot VtableSlot;
 typedef struct RelationSide RelationSide;
 typedef struct StructLitField StructLitField;
 typedef struct LexerState LexerState;
@@ -104,6 +105,7 @@ typedef struct LParam LParam;
 typedef struct LTypeParam LTypeParam;
 typedef struct LImport LImport;
 typedef struct LInterfaceMethod LInterfaceMethod;
+typedef struct LVtableSlot LVtableSlot;
 typedef struct LRelationalConstraint LRelationalConstraint;
 typedef struct ImplRenameEntry ImplRenameEntry;
 typedef struct CLambda CLambda;
@@ -124,6 +126,7 @@ typedef struct EnumVariant EnumVariant;
 typedef struct EnumDecl EnumDecl;
 typedef struct InterfaceFieldDecl InterfaceFieldDecl;
 typedef struct DestructorBlock DestructorBlock;
+typedef struct InterfaceWhereClause InterfaceWhereClause;
 typedef struct InterfaceDecl InterfaceDecl;
 typedef struct ImplMapping ImplMapping;
 typedef struct ImplBlock ImplBlock;
@@ -392,7 +395,8 @@ typedef enum {
     LTypeKind_TyErrorResult = 27,
     LTypeKind_TyAny = 28,
     LTypeKind_TyTypeVar = 29,
-    LTypeKind_TyUnion = 30
+    LTypeKind_TyUnion = 30,
+    LTypeKind_TyInterfaceRef = 31
 } LTypeKind;
 
 typedef enum {
@@ -439,7 +443,10 @@ typedef enum {
     LExprKind_ExFuncLit = 26,
     LExprKind_ExFormat = 27,
     LExprKind_ExSlabGet = 28,
-    LExprKind_ExSlabAlloc = 29
+    LExprKind_ExSlabAlloc = 29,
+    LExprKind_ExBoxInterface = 30,
+    LExprKind_ExUnboxInterface = 31,
+    LExprKind_ExVtableCall = 32
 } LExprKind;
 
 typedef enum {
@@ -500,7 +507,8 @@ typedef enum {
     LStmtKind_StSliceRetain = 27,
     LStmtKind_StRefIncr = 28,
     LStmtKind_StRefDecr = 29,
-    LStmtKind_StSliceRcRelease = 30
+    LStmtKind_StSliceRcRelease = 30,
+    LStmtKind_StTypeAssert = 31
 } LStmtKind;
 
 typedef enum {
@@ -533,8 +541,10 @@ LYRIC_SLICE_DEF(FuncDecl*, LyricSlice_FuncDeclptr)
 LYRIC_SLICE_DEF(SubScope*, LyricSlice_SubScopeptr)
 LYRIC_SLICE_DEF(TupleField*, LyricSlice_TupleFieldptr)
 LYRIC_SLICE_DEF(EnumVariant*, LyricSlice_EnumVariantptr)
+LYRIC_SLICE_DEF(VtableSlot, LyricSlice_VtableSlot)
 LYRIC_SLICE_DEF(InterfaceFieldDecl*, LyricSlice_InterfaceFieldDeclptr)
 LYRIC_SLICE_DEF(DestructorBlock*, LyricSlice_DestructorBlockptr)
+LYRIC_SLICE_DEF(InterfaceWhereClause*, LyricSlice_InterfaceWhereClauseptr)
 LYRIC_SLICE_DEF(ImplTypeArg*, LyricSlice_ImplTypeArgptr)
 LYRIC_SLICE_DEF(ImplMapping*, LyricSlice_ImplMappingptr)
 LYRIC_SLICE_DEF(Pattern*, LyricSlice_Patternptr)
@@ -556,6 +566,7 @@ LYRIC_SLICE_DEF(VariantField, LyricSlice_VariantField)
 LYRIC_SLICE_DEF(LVariant, LyricSlice_LVariant)
 LYRIC_SLICE_DEF(LTypeParam, LyricSlice_LTypeParam)
 LYRIC_SLICE_DEF(LInterfaceMethod, LyricSlice_LInterfaceMethod)
+LYRIC_SLICE_DEF(LVtableSlot, LyricSlice_LVtableSlot)
 LYRIC_SLICE_DEF(LRelationalConstraint, LyricSlice_LRelationalConstraint)
 LYRIC_SLICE_DEF(LImport, LyricSlice_LImport)
 LYRIC_SLICE_DEF(LStructDecl*, LyricSlice_LStructDeclptr)
@@ -616,7 +627,8 @@ enum TypeExprKind_Tag {
     TypeExprKind_Channel = 7,
     TypeExprKind_Generator = 8,
     TypeExprKind_Lock = 9,
-    TypeExprKind_Unit = 10
+    TypeExprKind_Unit = 10,
+    TypeExprKind_InterfaceType = 11
 };
 
 typedef struct {
@@ -658,6 +670,12 @@ typedef struct {
     TypeExpr* elem;
 } TypeExprKind_Generator_Data;
 
+typedef struct {
+    Sym* iface_name;
+    Sym* member_name;
+    Sym* brand;
+} TypeExprKind_InterfaceType_Data;
+
 struct TypeExprKind {
     enum TypeExprKind_Tag tag;
     union {
@@ -670,6 +688,7 @@ struct TypeExprKind {
         TypeExprKind_Func_Data func;
         TypeExprKind_Channel_Data channel;
         TypeExprKind_Generator_Data generator;
+        TypeExprKind_InterfaceType_Data interfacetype;
     } data;
 };
 
@@ -1140,6 +1159,13 @@ struct Pos {
     int32_t column;
 };
 
+struct VtableSlot {
+    Sym* method_name;
+    Sym* family_param;
+    bool is_getter;
+    bool is_setter;
+};
+
 struct RelationSide {
     Sym* type_name;
     LyricSlice_Symptr type_args;
@@ -1514,6 +1540,14 @@ struct LInterfaceMethod {
     LType* return_type;
 };
 
+struct LVtableSlot {
+    lyric_string name;
+    lyric_string family_param;
+    LType* func_ptr_type;
+    bool is_getter;
+    bool is_setter;
+};
+
 struct LRelationalConstraint {
     lyric_string interface_name;
     LyricSlice_lyric_string type_args;
@@ -1576,6 +1610,7 @@ typedef struct LyricTuple_3 {
     lyric_string _1;
 } LyricTuple_3;
 
+LYRIC_OPT_DEF(LyricSlice_VtableSlot, LyricOpt_LyricSlice_VtableSlot)
 LYRIC_OPT_DEF(RelationKind, LyricOpt_RelationKind)
 LYRIC_OPT_DEF(LBinOpData, LyricOpt_LBinOpData)
 LYRIC_OPT_DEF(LUnOpData, LyricOpt_LUnOpData)
@@ -1909,17 +1944,29 @@ struct DestructorBlock {
     struct DestructorBlock* lyric_next;
 };
 
+struct InterfaceWhereClause {
+    Sym* interface_name;
+    LyricSlice_Symptr type_args;
+    Span span;
+    InterfaceDecl* __iwc_parent;
+    int32_t __iwc_index;
+    uint32_t _rc;
+    struct InterfaceWhereClause* lyric_next;
+};
+
 struct InterfaceDecl {
     Sym* name;
     bool is_public;
     LyricSlice_Symptr implements;
     Sym* extends_name;
     LyricSlice_Symptr extends_args;
+    LyricOpt_LyricSlice_VtableSlot vtable_layout;
     Span span;
     LyricSlice_TypeParamptr __itp_children;
     LyricSlice_FuncDeclptr __im_children;
     LyricSlice_InterfaceFieldDeclptr __ifd_children;
     LyricSlice_DestructorBlockptr __idb_children;
+    LyricSlice_InterfaceWhereClauseptr __iwc_children;
     LyricBlock* __id_parent;
     int32_t __id_index;
     uint32_t _rc;
@@ -1943,6 +1990,7 @@ struct ImplMapping {
 struct ImplBlock {
     Sym* interface_name;
     Sym* for_type;
+    Sym* name;
     LyricOpt_RelationKind kind;
     Span span;
     LyricSlice_ImplTypeArgptr __ib_arg_children;
@@ -2226,6 +2274,8 @@ struct LType {
     bool is_permanent;
     bool is_owned;
     LClassDecl* class_decl;
+    lyric_string member_name;
+    lyric_string brand;
     struct LType* lyric_next;
 };
 
@@ -2370,6 +2420,8 @@ struct LInterfaceDecl {
     LyricSlice_LTypeParam type_params;
     LyricSlice_LInterfaceMethod methods;
     bool is_exported;
+    LyricSlice_lyric_string family_params;
+    LyricSlice_LVtableSlot vtable_slots;
     struct LInterfaceDecl* lyric_next;
 };
 
@@ -3120,6 +3172,14 @@ typedef struct LyricSlab_DestructorBlock_Block {
 } LyricSlab_DestructorBlock_Block;
 typedef struct { LyricSlab_DestructorBlock_Block* cur; DestructorBlock* free; } LyricSlab_DestructorBlock;
 static LyricSlab_DestructorBlock _lyric_slab_DestructorBlock = {0};
+
+typedef struct LyricSlab_InterfaceWhereClause_Block {
+    struct InterfaceWhereClause data[LYRIC_SLAB_BLOCK];
+    struct LyricSlab_InterfaceWhereClause_Block* next;
+    int32_t used;
+} LyricSlab_InterfaceWhereClause_Block;
+typedef struct { LyricSlab_InterfaceWhereClause_Block* cur; InterfaceWhereClause* free; } LyricSlab_InterfaceWhereClause;
+static LyricSlab_InterfaceWhereClause _lyric_slab_InterfaceWhereClause = {0};
 
 typedef struct LyricSlab_InterfaceDecl_Block {
     struct InterfaceDecl data[LYRIC_SLAB_BLOCK];
@@ -4201,6 +4261,24 @@ static DestructorBlock* _lyric_slab_alloc_DestructorBlock(void) {
         _lyric_slab_DestructorBlock.cur = b;
     }
     DestructorBlock* p = &_lyric_slab_DestructorBlock.cur->data[_lyric_slab_DestructorBlock.cur->used++];
+    p->_rc = 1;
+    return p;
+}
+
+static InterfaceWhereClause* _lyric_slab_alloc_InterfaceWhereClause(void) {
+    if (_lyric_slab_InterfaceWhereClause.free) {
+        InterfaceWhereClause* p = _lyric_slab_InterfaceWhereClause.free;
+        _lyric_slab_InterfaceWhereClause.free = p->lyric_next;
+        memset(p, 0, sizeof(InterfaceWhereClause));
+        p->_rc = 1;
+        return p;
+    }
+    if (!_lyric_slab_InterfaceWhereClause.cur || _lyric_slab_InterfaceWhereClause.cur->used == LYRIC_SLAB_BLOCK) {
+        LyricSlab_InterfaceWhereClause_Block* b = (LyricSlab_InterfaceWhereClause_Block*)calloc(1, sizeof(LyricSlab_InterfaceWhereClause_Block));
+        b->next = _lyric_slab_InterfaceWhereClause.cur;
+        _lyric_slab_InterfaceWhereClause.cur = b;
+    }
+    InterfaceWhereClause* p = &_lyric_slab_InterfaceWhereClause.cur->data[_lyric_slab_InterfaceWhereClause.cur->used++];
     p->_rc = 1;
     return p;
 }
@@ -6093,6 +6171,12 @@ static void _lyric_slab_free_DestructorBlock(DestructorBlock* p) {
     _lyric_slab_DestructorBlock.free = p;
 }
 
+static void _lyric_slab_free_InterfaceWhereClause(InterfaceWhereClause* p) {
+    if (!p) return;
+    p->lyric_next = _lyric_slab_InterfaceWhereClause.free;
+    _lyric_slab_InterfaceWhereClause.free = p;
+}
+
 static void _lyric_slab_free_InterfaceDecl(InterfaceDecl* p) {
     if (!p) return;
     p->lyric_next = _lyric_slab_InterfaceDecl.free;
@@ -6751,6 +6835,7 @@ static lyric_string LUnOpKind_to_string(LUnOpKind v);
 static lyric_string LStmtKind_to_string(LStmtKind v);
 static lyric_string LSelectKind_to_string(LSelectKind v);
 static lyric_string Pos_to_string(Pos v);
+static lyric_string VtableSlot_to_string(VtableSlot v);
 static lyric_string RelationSide_to_string(RelationSide v);
 static lyric_string StructLitField_to_string(StructLitField v);
 static lyric_string LexerState_to_string(LexerState v);
@@ -6820,6 +6905,7 @@ static lyric_string LParam_to_string(LParam v);
 static lyric_string LTypeParam_to_string(LTypeParam v);
 static lyric_string LImport_to_string(LImport v);
 static lyric_string LInterfaceMethod_to_string(LInterfaceMethod v);
+static lyric_string LVtableSlot_to_string(LVtableSlot v);
 static lyric_string LRelationalConstraint_to_string(LRelationalConstraint v);
 static lyric_string ImplRenameEntry_to_string(ImplRenameEntry v);
 static lyric_string CLambda_to_string(CLambda v);
@@ -6842,6 +6928,7 @@ static lyric_string EnumVariant_to_string(EnumVariant* v);
 static lyric_string EnumDecl_to_string(EnumDecl* v);
 static lyric_string InterfaceFieldDecl_to_string(InterfaceFieldDecl* v);
 static lyric_string DestructorBlock_to_string(DestructorBlock* v);
+static lyric_string InterfaceWhereClause_to_string(InterfaceWhereClause* v);
 static lyric_string InterfaceDecl_to_string(InterfaceDecl* v);
 static lyric_string ImplMapping_to_string(ImplMapping* v);
 static lyric_string ImplBlock_to_string(ImplBlock* v);
@@ -6959,6 +7046,7 @@ static lyric_string TypeExprKind_to_string(TypeExprKind v) {
         case TypeExprKind_Generator: return LYRIC_STR("Generator");
         case TypeExprKind_Lock: return LYRIC_STR("Lock");
         case TypeExprKind_Unit: return LYRIC_STR("Unit");
+        case TypeExprKind_InterfaceType: return LYRIC_STR("InterfaceType");
         default: return LYRIC_STR("<unknown TypeExprKind>");
     }
 }
@@ -7237,6 +7325,7 @@ static lyric_string LTypeKind_to_string(LTypeKind v) {
         case LTypeKind_TyAny: return LYRIC_STR("TyAny");
         case LTypeKind_TyTypeVar: return LYRIC_STR("TyTypeVar");
         case LTypeKind_TyUnion: return LYRIC_STR("TyUnion");
+        case LTypeKind_TyInterfaceRef: return LYRIC_STR("TyInterfaceRef");
         default: return LYRIC_STR("<unknown LTypeKind>");
     }
 }
@@ -7290,6 +7379,9 @@ static lyric_string LExprKind_to_string(LExprKind v) {
         case LExprKind_ExFormat: return LYRIC_STR("ExFormat");
         case LExprKind_ExSlabGet: return LYRIC_STR("ExSlabGet");
         case LExprKind_ExSlabAlloc: return LYRIC_STR("ExSlabAlloc");
+        case LExprKind_ExBoxInterface: return LYRIC_STR("ExBoxInterface");
+        case LExprKind_ExUnboxInterface: return LYRIC_STR("ExUnboxInterface");
+        case LExprKind_ExVtableCall: return LYRIC_STR("ExVtableCall");
         default: return LYRIC_STR("<unknown LExprKind>");
     }
 }
@@ -7360,6 +7452,7 @@ static lyric_string LStmtKind_to_string(LStmtKind v) {
         case LStmtKind_StRefIncr: return LYRIC_STR("StRefIncr");
         case LStmtKind_StRefDecr: return LYRIC_STR("StRefDecr");
         case LStmtKind_StSliceRcRelease: return LYRIC_STR("StSliceRcRelease");
+        case LStmtKind_StTypeAssert: return LYRIC_STR("StTypeAssert");
         default: return LYRIC_STR("<unknown LStmtKind>");
     }
 }
@@ -7383,6 +7476,23 @@ static lyric_string Pos_to_string(Pos v) {
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("column: "));
     _result = lyric_str_concat(_result, lyric_sprintf("%d", v.column));
+    _result = lyric_str_concat(_result, LYRIC_STR("}"));
+    return _result;
+}
+
+static lyric_string VtableSlot_to_string(VtableSlot v) {
+    lyric_string _result = LYRIC_STR("VtableSlot{");
+    _result = lyric_str_concat(_result, LYRIC_STR("method_name: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("family_param: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("is_getter: "));
+    _result = lyric_str_concat(_result, (v.is_getter ? LYRIC_STR("true") : LYRIC_STR("false")));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("is_setter: "));
+    _result = lyric_str_concat(_result, (v.is_setter ? LYRIC_STR("true") : LYRIC_STR("false")));
     _result = lyric_str_concat(_result, LYRIC_STR("}"));
     return _result;
 }
@@ -8233,6 +8343,26 @@ static lyric_string LInterfaceMethod_to_string(LInterfaceMethod v) {
     return _result;
 }
 
+static lyric_string LVtableSlot_to_string(LVtableSlot v) {
+    lyric_string _result = LYRIC_STR("LVtableSlot{");
+    _result = lyric_str_concat(_result, LYRIC_STR("name: "));
+    _result = lyric_str_concat(_result, lyric_sprintf("\"%.*s\"", (int)v.name.len, (const char*)v.name.data));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("family_param: "));
+    _result = lyric_str_concat(_result, lyric_sprintf("\"%.*s\"", (int)v.family_param.len, (const char*)v.family_param.data));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("func_ptr_type: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("is_getter: "));
+    _result = lyric_str_concat(_result, (v.is_getter ? LYRIC_STR("true") : LYRIC_STR("false")));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("is_setter: "));
+    _result = lyric_str_concat(_result, (v.is_setter ? LYRIC_STR("true") : LYRIC_STR("false")));
+    _result = lyric_str_concat(_result, LYRIC_STR("}"));
+    return _result;
+}
+
 static lyric_string LRelationalConstraint_to_string(LRelationalConstraint v) {
     lyric_string _result = LYRIC_STR("LRelationalConstraint{");
     _result = lyric_str_concat(_result, LYRIC_STR("interface_name: "));
@@ -8757,6 +8887,26 @@ static lyric_string DestructorBlock_to_string(DestructorBlock* v) {
     return _result;
 }
 
+static lyric_string InterfaceWhereClause_to_string(InterfaceWhereClause* v) {
+    lyric_string _result = LYRIC_STR("InterfaceWhereClause{");
+    _result = lyric_str_concat(_result, LYRIC_STR("interface_name: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("type_args: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("span: "));
+    _result = lyric_str_concat(_result, Span_to_string(v->span));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("__iwc_parent: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("__iwc_index: "));
+    _result = lyric_str_concat(_result, lyric_sprintf("%d", v->__iwc_index));
+    _result = lyric_str_concat(_result, LYRIC_STR("}"));
+    return _result;
+}
+
 static lyric_string InterfaceDecl_to_string(InterfaceDecl* v) {
     lyric_string _result = LYRIC_STR("InterfaceDecl{");
     _result = lyric_str_concat(_result, LYRIC_STR("name: "));
@@ -8774,6 +8924,9 @@ static lyric_string InterfaceDecl_to_string(InterfaceDecl* v) {
     _result = lyric_str_concat(_result, LYRIC_STR("extends_args: "));
     _result = lyric_str_concat(_result, LYRIC_STR("<>"));
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("vtable_layout: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("span: "));
     _result = lyric_str_concat(_result, Span_to_string(v->span));
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
@@ -8787,6 +8940,9 @@ static lyric_string InterfaceDecl_to_string(InterfaceDecl* v) {
     _result = lyric_str_concat(_result, LYRIC_STR("<>"));
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("__idb_children: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("__iwc_children: "));
     _result = lyric_str_concat(_result, LYRIC_STR("<>"));
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("__id_parent: "));
@@ -8836,6 +8992,9 @@ static lyric_string ImplBlock_to_string(ImplBlock* v) {
     _result = lyric_str_concat(_result, LYRIC_STR("<>"));
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("for_type: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("name: "));
     _result = lyric_str_concat(_result, LYRIC_STR("<>"));
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("kind: "));
@@ -9439,6 +9598,12 @@ static lyric_string LType_to_string(LType* v) {
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("class_decl: "));
     _result = lyric_str_concat(_result, LYRIC_STR("<>"));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("member_name: "));
+    _result = lyric_str_concat(_result, lyric_sprintf("\"%.*s\"", (int)v->member_name.len, (const char*)v->member_name.data));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("brand: "));
+    _result = lyric_str_concat(_result, lyric_sprintf("\"%.*s\"", (int)v->brand.len, (const char*)v->brand.data));
     _result = lyric_str_concat(_result, LYRIC_STR("}"));
     return _result;
 }
@@ -9801,6 +9966,12 @@ static lyric_string LInterfaceDecl_to_string(LInterfaceDecl* v) {
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("is_exported: "));
     _result = lyric_str_concat(_result, (v->is_exported ? LYRIC_STR("true") : LYRIC_STR("false")));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("family_params: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("vtable_slots: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
     _result = lyric_str_concat(_result, LYRIC_STR("}"));
     return _result;
 }
@@ -11159,6 +11330,7 @@ void EnumVariant_destroy(EnumVariant* self);
 void EnumDecl_destroy(EnumDecl* self);
 void InterfaceFieldDecl_destroy(InterfaceFieldDecl* self);
 void DestructorBlock_destroy(DestructorBlock* self);
+void InterfaceWhereClause_destroy(InterfaceWhereClause* self);
 void InterfaceDecl_destroy(InterfaceDecl* self);
 void ImplMapping_destroy(ImplMapping* self);
 void ImplBlock_destroy(ImplBlock* self);
@@ -11290,6 +11462,12 @@ InterfaceDecl* DestructorBlock___idb_parent(DestructorBlock* self);
 void DestructorBlock_set___idb_parent(DestructorBlock* self, InterfaceDecl* val);
 int32_t DestructorBlock___idb_index(DestructorBlock* self);
 void DestructorBlock_set___idb_index(DestructorBlock* self, int32_t val);
+LyricSlice_InterfaceWhereClauseptr InterfaceDecl___iwc_children(InterfaceDecl* self);
+void InterfaceDecl_set___iwc_children(InterfaceDecl* self, LyricSlice_InterfaceWhereClauseptr val);
+InterfaceDecl* InterfaceWhereClause___iwc_parent(InterfaceWhereClause* self);
+void InterfaceWhereClause_set___iwc_parent(InterfaceWhereClause* self, InterfaceDecl* val);
+int32_t InterfaceWhereClause___iwc_index(InterfaceWhereClause* self);
+void InterfaceWhereClause_set___iwc_index(InterfaceWhereClause* self, int32_t val);
 LyricSlice_ImplTypeArgptr ImplBlock___ib_arg_children(ImplBlock* self);
 void ImplBlock_set___ib_arg_children(ImplBlock* self, LyricSlice_ImplTypeArgptr val);
 ImplBlock* ImplTypeArg___ib_arg_parent(ImplTypeArg* self);
@@ -12121,6 +12299,7 @@ void array_remove_CEnumDecl_CEnumVariant(EnumVariant* child);
 void array_remove_CLyricBlock_CEnumDecl(EnumDecl* child);
 void array_remove_CInterfaceDecl_CInterfaceFieldDecl(InterfaceFieldDecl* child);
 void array_remove_CInterfaceDecl_CDestructorBlock(DestructorBlock* child);
+void array_remove_CInterfaceDecl_CInterfaceWhereClause(InterfaceWhereClause* child);
 void array_remove_CLyricBlock_CInterfaceDecl(InterfaceDecl* child);
 void array_remove_CImplBlock_CImplMapping(ImplMapping* child);
 void array_remove_CLyricBlock_CImplBlock(ImplBlock* child);
@@ -16568,6 +16747,13 @@ void DestructorBlock_destroy(DestructorBlock* self) {
     _lyric_slab_free_DestructorBlock(self);
 }
 
+void InterfaceWhereClause_destroy(InterfaceWhereClause* self) {
+    {
+        array_remove_CInterfaceDecl_CInterfaceWhereClause(self);
+    }
+    _lyric_slab_free_InterfaceWhereClause(self);
+}
+
 void InterfaceDecl_destroy(InterfaceDecl* self) {
     {
         LyricSlice_TypeParamptr _t0 = InterfaceDecl___itp_children(self);
@@ -16635,6 +16821,23 @@ void InterfaceDecl_destroy(InterfaceDecl* self) {
             DestructorBlock_destroy(_t33);
             int32_t _t35 = (i - 1);
             i = _t35;
+        }
+    }
+    {
+        LyricSlice_InterfaceWhereClauseptr _t36 = InterfaceDecl___iwc_children(self);
+        LyricSlice_InterfaceWhereClauseptr kids = _t36;
+        int32_t _t37 = kids.len;
+        int32_t _t38 = (_t37 - 1);
+        int32_t i = _t38;
+        while (1) {
+            bool _t39 = (i >= 0);
+            if (!(_t39)) break;
+            InterfaceWhereClause* _t40 = kids.data[i];
+            InterfaceWhereClause_set___iwc_parent(_t40, NULL);
+            InterfaceWhereClause* _t42 = kids.data[i];
+            InterfaceWhereClause_destroy(_t42);
+            int32_t _t44 = (i - 1);
+            i = _t44;
         }
     }
     {
@@ -17568,6 +17771,33 @@ int32_t DestructorBlock___idb_index(DestructorBlock* self) {
 
 void DestructorBlock_set___idb_index(DestructorBlock* self, int32_t val) {
     self->__idb_index = val;
+}
+
+LyricSlice_InterfaceWhereClauseptr InterfaceDecl___iwc_children(InterfaceDecl* self) {
+    LyricSlice_InterfaceWhereClauseptr _t0 = self->__iwc_children;
+    return _t0;
+}
+
+void InterfaceDecl_set___iwc_children(InterfaceDecl* self, LyricSlice_InterfaceWhereClauseptr val) {
+    self->__iwc_children = val;
+}
+
+InterfaceDecl* InterfaceWhereClause___iwc_parent(InterfaceWhereClause* self) {
+    InterfaceDecl* _t0 = self->__iwc_parent;
+    return _t0;
+}
+
+void InterfaceWhereClause_set___iwc_parent(InterfaceWhereClause* self, InterfaceDecl* val) {
+    self->__iwc_parent = val;
+}
+
+int32_t InterfaceWhereClause___iwc_index(InterfaceWhereClause* self) {
+    int32_t _t0 = self->__iwc_index;
+    return _t0;
+}
+
+void InterfaceWhereClause_set___iwc_index(InterfaceWhereClause* self, int32_t val) {
+    self->__iwc_index = val;
 }
 
 LyricSlice_ImplTypeArgptr ImplBlock___ib_arg_children(ImplBlock* self) {
@@ -103292,6 +103522,35 @@ void array_remove_CInterfaceDecl_CDestructorBlock(DestructorBlock* child) {
     InterfaceDecl_set___idb_children(_t10, _t11);
     DestructorBlock_set___idb_parent(child, 0);
     DestructorBlock_set___idb_index(child, 0);
+}
+
+void array_remove_CInterfaceDecl_CInterfaceWhereClause(InterfaceWhereClause* child) {
+    InterfaceDecl* _t0 = InterfaceWhereClause___iwc_parent(child);
+    InterfaceDecl* p = _t0;
+    bool _t1 = (p == NULL);
+    if (_t1) {
+        return;
+    }
+    InterfaceDecl* _t2 = lyric_unwrap_class(p);
+    LyricSlice_InterfaceWhereClauseptr _t3 = InterfaceDecl___iwc_children(_t2);
+    LyricSlice_InterfaceWhereClauseptr kids = _t3;
+    int32_t _t4 = InterfaceWhereClause___iwc_index(child);
+    int32_t idx = _t4;
+    int32_t _t5 = kids.len;
+    int32_t _t6 = (_t5 - 1);
+    int32_t last_idx = _t6;
+    bool _t7 = (idx < last_idx);
+    if (_t7) {
+        InterfaceWhereClause* _t8 = kids.data[last_idx];
+        InterfaceWhereClause* last_child = _t8;
+        InterfaceWhereClause_set___iwc_index(last_child, idx);
+        kids.data[idx] = last_child;
+    }
+    InterfaceDecl* _t10 = lyric_unwrap_class(p);
+    LyricSlice_InterfaceWhereClauseptr _t11 = lyric_subslice(kids, 0, last_idx, LyricSlice_InterfaceWhereClauseptr);
+    InterfaceDecl_set___iwc_children(_t10, _t11);
+    InterfaceWhereClause_set___iwc_parent(child, 0);
+    InterfaceWhereClause_set___iwc_index(child, 0);
 }
 
 void array_remove_CLyricBlock_CInterfaceDecl(InterfaceDecl* child) {
