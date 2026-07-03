@@ -567,9 +567,28 @@ static inline void lyric_spawn(void* (*func)(void*), void* arg) {
 }
 
 /* -------------------------------------------------------------------------
+ * Interface fat pointers (for Go-style interface dispatch)
+ * -------------------------------------------------------------------------
+ *
+ * An ly_iface value is a (data pointer, vtable pointer) pair. The data
+ * pointer points to the concrete object (heap-allocated class handle);
+ * the vtable pointer points to a static const vtable struct containing
+ * function pointers for the interface's methods.
+ *
+ * Boxing: concrete code constructs ly_iface values.
+ * Unboxing: type switch / type assert recovers the concrete pointer.
+ * Dispatch: indirect call through vtable slot.
+ */
+typedef struct {
+    void* _data;
+    const void* _vt;
+} ly_iface;
+
+/* -------------------------------------------------------------------------
  * Tagged Unions (for ad-hoc union types like string | i32 | bool)
  * -------------------------------------------------------------------------
  */
+
 #define LYRIC_UNION_TAG_I32    0
 #define LYRIC_UNION_TAG_I64    1
 #define LYRIC_UNION_TAG_F32    2
