@@ -5596,7 +5596,14 @@ pub func emit_c(prog: LProgram?) -> string {
             p = p + 1
           }
           let cast_type = f"{ret_type}(*)({sb.to_string()})"
-          g.line(f".{m.name} = ({cast_type}){class_name}_{m.name},")
+          // Prefer the impl wrapper (Class_Interface_method) if it exists;
+          // otherwise use the direct class method (Class_method).
+          // func_by_name keys are "receiver.method_name" for methods.
+          let impl_wrapper_key = f"{class_name}.{iface_name}_{m.name}"
+          let impl_wrapper_cname = f"{class_name}_{iface_name}_{m.name}"
+          let direct_cname = f"{class_name}_{m.name}"
+          let fn_name = if !isnull(g.func_by_name!.get(sym(impl_wrapper_key))) { impl_wrapper_cname } else { direct_cname }
+          g.line(f".{m.name} = ({cast_type}){fn_name},")
           k = k + 1
         }
         g.indent = g.indent - 1
