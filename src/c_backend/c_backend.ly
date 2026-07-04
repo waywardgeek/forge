@@ -2813,9 +2813,16 @@ func CGen.emit_stmt(self, s: LStmt?) {
       let mut var_type = d.typ
       // Resolve type from init if type is any/typevar
       if !isnull(d.init) {
-        let should_resolve = (
+        let mut should_resolve = (
           isnull(var_type) || self.contains_type_var(var_type) || var_type!.kind is TyAny
         )
+        // Don't resolve named interface types — keep the interface type
+        // so the variable is Printable, not Dog*
+        if should_resolve && !isnull(var_type) && var_type!.kind is TyAny && var_type!.name != "" {
+          if !isnull(self.iface_by_name!.get(sym(var_type!.name))) {
+            should_resolve = false
+          }
+        }
         if should_resolve {
           let resolved = self.resolve_value_type(d.init)
           if !isnull(resolved) {
@@ -2842,6 +2849,16 @@ func CGen.emit_stmt(self, s: LStmt?) {
           )
           if is_lit {
             init_str = f"lyric_some({init_str}, {self.c_type(var_type)})"
+          }
+        }
+        // Box concrete class into interface fat pointer
+        if !isnull(var_type) && var_type!.kind is TyAny && var_type!.name != "" {
+          let iface_entry = self.iface_by_name!.get(sym(var_type!.name))
+          if !isnull(iface_entry) && len(iface_entry!.value.type_params) <= 1 {
+            let src_type = self.infer_lval_type(d.init)
+            if !isnull(src_type) && src_type!.kind is TyClassHandle {
+              init_str = f"({var_type!.name}){{._data = {init_str}, ._vtable = &{src_type!.name}_as_{var_type!.name}}}"
+            }
           }
         }
         self.line(f"{self.c_field_decl(var_type, name)} = {init_str};")
