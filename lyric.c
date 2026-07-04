@@ -40023,120 +40023,174 @@ void Checker_register_impl_methods(Checker* self, ImplBlock* ib) {
             }
         }
         free(_gen_iter_185);
+        int32_t _t40 = itp.len;
+        bool _t41 = (_t40 <= 1);
+        if (_t41) {
+            range_gen_t* _t42 = range_init(0, limit);
+            range_gen_t* _gen_iter_186 = _t42;
+            while (range_next(_gen_iter_186)) {
+                int32_t i = _gen_iter_186->_value;
+                TypeParam* _t43 = itp.data[i];
+                Sym* _t44 = _t43->name;
+                bool _t45 = (_t44 != 0);
+                if (_t45) {
+                    TypeParam* _t46 = itp.data[i];
+                    Sym* _t47 = _t46->name;
+                    Sym* _t48 = lyric_unwrap_class(_t47);
+                    DictEntry_CSym_CType* _t49 = Dict_CSym_CType_get(subst, _t48);
+                    DictEntry_CSym_CType* bound = _t49;
+                    bool _t50 = (bound != 0);
+                    if (_t50) {
+                        DictEntry_CSym_CType* _t51 = lyric_unwrap_class(bound);
+                        Type* _t52 = _t51->value;
+                        lyric_string _t53 = type_name(_t52);
+                        lyric_string cname = _t53;
+                        bool _t54 = (!lyric_str_eq(cname, LYRIC_STR("")));
+                        if (_t54) {
+                            Registry* _t55 = self->registry;
+                            TypeInfo* _t56 = Registry_lookup(_t55, cname);
+                            TypeInfo* cinfo = _t56;
+                            bool _t57 = (cinfo != 0);
+                            if (_t57) {
+                                bool already = false;
+                                TypeInfo* _t58 = lyric_unwrap_class(cinfo);
+                                LyricSlice_lyric_string _t59 = _t58->implements_list;
+                                for (int32_t _idx = 0; _idx < _t59.len; _idx++) {
+                                    lyric_string existing = _t59.data[_idx];
+                                    bool _t60 = lyric_str_eq(existing, iname);
+                                    if (_t60) {
+                                        already = true;
+                                    }
+                                }
+                                bool _t61 = (!already);
+                                if (_t61) {
+                                    TypeInfo* _t62 = lyric_unwrap_class(cinfo);
+                                    LyricSlice_lyric_string _t63 = _t62->implements_list;
+                                    LyricSlice_lyric_string _t64 = ({ lyric_push(&_t63, iname, LyricSlice_lyric_string); _t63; });
+                                    _t62->implements_list = _t63;
+                                    _t64;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            free(_gen_iter_186);
+        }
     }
-    LyricSlice_ImplMappingptr _t40 = ImplBlock___ibm_children(ib);
-    LyricSlice_ImplMappingptr mappings = _t40;
+    LyricSlice_ImplMappingptr _t65 = ImplBlock___ibm_children(ib);
+    LyricSlice_ImplMappingptr mappings = _t65;
     for (int32_t _idx = 0; _idx < mappings.len; _idx++) {
         ImplMapping* m = mappings.data[_idx];
-        Sym* _t41 = m->method_name;
-        bool _t42 = (_t41 == 0);
-        if (_t42) {
+        Sym* _t66 = m->method_name;
+        bool _t67 = (_t66 == 0);
+        if (_t67) {
             continue;
         }
-        Sym* _t43 = m->method_name;
-        Sym* _t44 = lyric_unwrap_class(_t43);
-        lyric_string _t45 = sym_to_string(_t44);
-        lyric_string method_name = _t45;
-        TypeInfo* _t46 = lyric_unwrap_class(iface_info);
-        Dict_CSym_CType* _t47 = _t46->methods;
-        Sym* _t48 = sym(method_name);
-        DictEntry_CSym_CType* _t49 = Dict_CSym_CType_get(_t47, _t48);
-        DictEntry_CSym_CType* iface_method = _t49;
-        bool _t50 = (iface_method == 0);
-        if (_t50) {
+        Sym* _t68 = m->method_name;
+        Sym* _t69 = lyric_unwrap_class(_t68);
+        lyric_string _t70 = sym_to_string(_t69);
+        lyric_string method_name = _t70;
+        TypeInfo* _t71 = lyric_unwrap_class(iface_info);
+        Dict_CSym_CType* _t72 = _t71->methods;
+        Sym* _t73 = sym(method_name);
+        DictEntry_CSym_CType* _t74 = Dict_CSym_CType_get(_t72, _t73);
+        DictEntry_CSym_CType* iface_method = _t74;
+        bool _t75 = (iface_method == 0);
+        if (_t75) {
             continue;
         }
         lyric_string class_name = LYRIC_STR("");
-        Sym* _t51 = m->type_param;
-        bool _t52 = (_t51 != 0);
-        if (_t52) {
-            Sym* _t53 = m->type_param;
-            Sym* _t54 = lyric_unwrap_class(_t53);
-            lyric_string _t55 = sym_to_string(_t54);
-            lyric_string tp_name = _t55;
-            Sym* _t56 = sym(tp_name);
-            DictEntry_CSym_CType* _t57 = Dict_CSym_CType_get(subst, _t56);
-            DictEntry_CSym_CType* bound = _t57;
-            bool _t58 = (bound != 0);
-            if (_t58) {
-                DictEntry_CSym_CType* _t59 = lyric_unwrap_class(bound);
-                Type* _t60 = _t59->value;
-                lyric_string _t61 = type_name(_t60);
-                class_name = _t61;
+        Sym* _t76 = m->type_param;
+        bool _t77 = (_t76 != 0);
+        if (_t77) {
+            Sym* _t78 = m->type_param;
+            Sym* _t79 = lyric_unwrap_class(_t78);
+            lyric_string _t80 = sym_to_string(_t79);
+            lyric_string tp_name = _t80;
+            Sym* _t81 = sym(tp_name);
+            DictEntry_CSym_CType* _t82 = Dict_CSym_CType_get(subst, _t81);
+            DictEntry_CSym_CType* bound = _t82;
+            bool _t83 = (bound != 0);
+            if (_t83) {
+                DictEntry_CSym_CType* _t84 = lyric_unwrap_class(bound);
+                Type* _t85 = _t84->value;
+                lyric_string _t86 = type_name(_t85);
+                class_name = _t86;
             }
-            bool _t62 = lyric_str_eq(class_name, LYRIC_STR(""));
-            if (_t62) {
+            bool _t87 = lyric_str_eq(class_name, LYRIC_STR(""));
+            if (_t87) {
                 class_name = tp_name;
             }
         }
-        bool _t63 = lyric_str_eq(class_name, LYRIC_STR(""));
-        if (_t63) {
+        bool _t88 = lyric_str_eq(class_name, LYRIC_STR(""));
+        if (_t88) {
             continue;
         }
-        Registry* _t64 = self->registry;
-        TypeInfo* _t65 = Registry_lookup(_t64, class_name);
-        TypeInfo* class_info = _t65;
-        bool _t66 = (class_info == 0);
-        if (_t66) {
+        Registry* _t89 = self->registry;
+        TypeInfo* _t90 = Registry_lookup(_t89, class_name);
+        TypeInfo* class_info = _t90;
+        bool _t91 = (class_info == 0);
+        if (_t91) {
             continue;
         }
-        DictEntry_CSym_CType* _t67 = lyric_unwrap_class(iface_method);
-        Type* _t68 = _t67->value;
-        Type* _t69 = substitute_type(_t68, subst);
-        Type* substituted = _t69;
-        TypeInfo* _t70 = lyric_unwrap_class(class_info);
-        Dict_CSym_CType* _t71 = _t70->methods;
-        Sym* _t72 = sym(method_name);
-        DictEntry_CSym_CType* _t73 = Dict_CSym_CType_get(_t71, _t72);
-        DictEntry_CSym_CType* existing = _t73;
-        bool _t74 = (existing == 0);
-        if (_t74) {
-            TypeInfo* _t75 = lyric_unwrap_class(class_info);
-            Dict_CSym_CType* _t76 = _t75->methods;
-            Sym* _t77 = sym(method_name);
-            Dict_CSym_CType_set(_t76, _t77, substituted);
+        DictEntry_CSym_CType* _t92 = lyric_unwrap_class(iface_method);
+        Type* _t93 = _t92->value;
+        Type* _t94 = substitute_type(_t93, subst);
+        Type* substituted = _t94;
+        TypeInfo* _t95 = lyric_unwrap_class(class_info);
+        Dict_CSym_CType* _t96 = _t95->methods;
+        Sym* _t97 = sym(method_name);
+        DictEntry_CSym_CType* _t98 = Dict_CSym_CType_get(_t96, _t97);
+        DictEntry_CSym_CType* existing = _t98;
+        bool _t99 = (existing == 0);
+        if (_t99) {
+            TypeInfo* _t100 = lyric_unwrap_class(class_info);
+            Dict_CSym_CType* _t101 = _t100->methods;
+            Sym* _t102 = sym(method_name);
+            Dict_CSym_CType_set(_t101, _t102, substituted);
         }
-        ImplMappingKind _t79 = m->kind;
-        int32_t _t80 = _t79;
-        switch (_t80) {
+        ImplMappingKind _t104 = m->kind;
+        int32_t _t105 = _t104;
+        switch (_t105) {
         case 1: {
-            Sym* _t81 = m->target_member;
-            bool _t82 = (_t81 != 0);
-            if (_t82) {
-                Sym* _t83 = m->target_member;
-                Sym* _t84 = lyric_unwrap_class(_t83);
-                lyric_string _t85 = sym_to_string(_t84);
-                lyric_string target = _t85;
-                bool _t86 = (!lyric_str_eq(target, method_name));
-                if (_t86) {
-                    bool _t87 = str_has_prefix(method_name, LYRIC_STR("set_"));
-                    if (_t87) {
-                        lyric_string _t88 = lyric_str_concat(LYRIC_STR("set_"), target);
-                        lyric_string prefixed = _t88;
-                        TypeInfo* _t89 = lyric_unwrap_class(class_info);
-                        Dict_CSym_CType* _t90 = _t89->methods;
-                        Sym* _t91 = sym(prefixed);
-                        DictEntry_CSym_CType* _t92 = Dict_CSym_CType_get(_t90, _t91);
-                        DictEntry_CSym_CType* existing2 = _t92;
-                        bool _t93 = (existing2 == 0);
-                        if (_t93) {
-                            TypeInfo* _t94 = lyric_unwrap_class(class_info);
-                            Dict_CSym_CType* _t95 = _t94->methods;
-                            Sym* _t96 = sym(prefixed);
-                            Dict_CSym_CType_set(_t95, _t96, substituted);
+            Sym* _t106 = m->target_member;
+            bool _t107 = (_t106 != 0);
+            if (_t107) {
+                Sym* _t108 = m->target_member;
+                Sym* _t109 = lyric_unwrap_class(_t108);
+                lyric_string _t110 = sym_to_string(_t109);
+                lyric_string target = _t110;
+                bool _t111 = (!lyric_str_eq(target, method_name));
+                if (_t111) {
+                    bool _t112 = str_has_prefix(method_name, LYRIC_STR("set_"));
+                    if (_t112) {
+                        lyric_string _t113 = lyric_str_concat(LYRIC_STR("set_"), target);
+                        lyric_string prefixed = _t113;
+                        TypeInfo* _t114 = lyric_unwrap_class(class_info);
+                        Dict_CSym_CType* _t115 = _t114->methods;
+                        Sym* _t116 = sym(prefixed);
+                        DictEntry_CSym_CType* _t117 = Dict_CSym_CType_get(_t115, _t116);
+                        DictEntry_CSym_CType* existing2 = _t117;
+                        bool _t118 = (existing2 == 0);
+                        if (_t118) {
+                            TypeInfo* _t119 = lyric_unwrap_class(class_info);
+                            Dict_CSym_CType* _t120 = _t119->methods;
+                            Sym* _t121 = sym(prefixed);
+                            Dict_CSym_CType_set(_t120, _t121, substituted);
                         }
                     } else {
-                        TypeInfo* _t98 = lyric_unwrap_class(class_info);
-                        Dict_CSym_CType* _t99 = _t98->methods;
-                        Sym* _t100 = sym(target);
-                        DictEntry_CSym_CType* _t101 = Dict_CSym_CType_get(_t99, _t100);
-                        DictEntry_CSym_CType* existing2 = _t101;
-                        bool _t102 = (existing2 == 0);
-                        if (_t102) {
-                            TypeInfo* _t103 = lyric_unwrap_class(class_info);
-                            Dict_CSym_CType* _t104 = _t103->methods;
-                            Sym* _t105 = sym(target);
-                            Dict_CSym_CType_set(_t104, _t105, substituted);
+                        TypeInfo* _t123 = lyric_unwrap_class(class_info);
+                        Dict_CSym_CType* _t124 = _t123->methods;
+                        Sym* _t125 = sym(target);
+                        DictEntry_CSym_CType* _t126 = Dict_CSym_CType_get(_t124, _t125);
+                        DictEntry_CSym_CType* existing2 = _t126;
+                        bool _t127 = (existing2 == 0);
+                        if (_t127) {
+                            TypeInfo* _t128 = lyric_unwrap_class(class_info);
+                            Dict_CSym_CType* _t129 = _t128->methods;
+                            Sym* _t130 = sym(target);
+                            Dict_CSym_CType_set(_t129, _t130, substituted);
                         }
                     }
                 }
@@ -40144,17 +40198,17 @@ void Checker_register_impl_methods(Checker* self, ImplBlock* ib) {
             break;
         }
         case 2: {
-            FuncDecl* _t107 = m->inline_func;
-            bool _t108 = (_t107 != 0);
-            if (_t108) {
-                FuncDecl* _t109 = m->inline_func;
-                FuncDecl* _t110 = lyric_unwrap_class(_t109);
-                Type* _t111 = Checker_func_decl_to_type(self, _t110);
-                Type* ft = _t111;
-                TypeInfo* _t112 = lyric_unwrap_class(class_info);
-                Dict_CSym_CType* _t113 = _t112->methods;
-                Sym* _t114 = sym(method_name);
-                Dict_CSym_CType_set(_t113, _t114, ft);
+            FuncDecl* _t132 = m->inline_func;
+            bool _t133 = (_t132 != 0);
+            if (_t133) {
+                FuncDecl* _t134 = m->inline_func;
+                FuncDecl* _t135 = lyric_unwrap_class(_t134);
+                Type* _t136 = Checker_func_decl_to_type(self, _t135);
+                Type* ft = _t136;
+                TypeInfo* _t137 = lyric_unwrap_class(class_info);
+                Dict_CSym_CType* _t138 = _t137->methods;
+                Sym* _t139 = sym(method_name);
+                Dict_CSym_CType_set(_t138, _t139, ft);
             }
             break;
         }
@@ -41310,9 +41364,9 @@ void Checker_check_var_decl(Checker* self, Sym* name, LyricSlice_Symptr names, T
                 LyricSlice_TupleFieldType fields = _t10;
                 int32_t _t11 = names.len;
                 range_gen_t* _t12 = range_init(0, _t11);
-                range_gen_t* _gen_iter_186 = _t12;
-                while (range_next(_gen_iter_186)) {
-                    int32_t i = _gen_iter_186->_value;
+                range_gen_t* _gen_iter_187 = _t12;
+                while (range_next(_gen_iter_187)) {
+                    int32_t i = _gen_iter_187->_value;
                     int32_t _t13 = fields.len;
                     bool _t14 = (i < _t13);
                     bool _sc15 = false;
@@ -41339,7 +41393,7 @@ void Checker_check_var_decl(Checker* self, Sym* name, LyricSlice_Symptr names, T
                         Scope_define(_t26, _t28, _t29);
                     }
                 }
-                free(_gen_iter_186);
+                free(_gen_iter_187);
                 break;
             }
             case 22: {
@@ -41824,9 +41878,9 @@ void Checker_bind_pattern(Checker* self, Pattern* pat, Type* val_type) {
                 if (_t20) {
                     int32_t _t21 = bindings.len;
                     range_gen_t* _t22 = range_init(0, _t21);
-                    range_gen_t* _gen_iter_187 = _t22;
-                    while (range_next(_gen_iter_187)) {
-                        int32_t i = _gen_iter_187->_value;
+                    range_gen_t* _gen_iter_188 = _t22;
+                    while (range_next(_gen_iter_188)) {
+                        int32_t i = _gen_iter_188->_value;
                         DictEntry_CSym_CVariantInfo* _t23 = lyric_unwrap_class(vi);
                         VariantInfo* _t24 = _t23->value;
                         LyricSlice_VariantField _t25 = _t24->fields;
@@ -41846,7 +41900,7 @@ void Checker_bind_pattern(Checker* self, Pattern* pat, Type* val_type) {
                             Checker_bind_pattern(self, _t35, _t36);
                         }
                     }
-                    free(_gen_iter_187);
+                    free(_gen_iter_188);
                     return;
                 }
             }
@@ -41869,9 +41923,9 @@ void Checker_bind_pattern(Checker* self, Pattern* pat, Type* val_type) {
             LyricSlice_TupleFieldType fields = _t43;
             int32_t _t44 = elems.len;
             range_gen_t* _t45 = range_init(0, _t44);
-            range_gen_t* _gen_iter_188 = _t45;
-            while (range_next(_gen_iter_188)) {
-                int32_t i = _gen_iter_188->_value;
+            range_gen_t* _gen_iter_189 = _t45;
+            while (range_next(_gen_iter_189)) {
+                int32_t i = _gen_iter_189->_value;
                 int32_t _t46 = fields.len;
                 bool _t47 = (i < _t46);
                 bool _sc48 = false;
@@ -41894,7 +41948,7 @@ void Checker_bind_pattern(Checker* self, Pattern* pat, Type* val_type) {
                     Checker_bind_pattern(self, _t57, _t58);
                 }
             }
-            free(_gen_iter_188);
+            free(_gen_iter_189);
             break;
         }
         default: {
@@ -42582,14 +42636,14 @@ Type* Checker_check_list_lit(Checker* self, LyricSlice_Exprptr elems) {
         Type* elem_type = _t3;
         int32_t _t4 = elems.len;
         range_gen_t* _t5 = range_init(1, _t4);
-        range_gen_t* _gen_iter_189 = _t5;
-        while (range_next(_gen_iter_189)) {
-            int32_t i = _gen_iter_189->_value;
+        range_gen_t* _gen_iter_190 = _t5;
+        while (range_next(_gen_iter_190)) {
+            int32_t i = _gen_iter_190->_value;
             Expr* _t6 = elems.data[i];
             Type* _t7 = Checker_check_expr(self, _t6);
             _t7;
         }
-        free(_gen_iter_189);
+        free(_gen_iter_190);
         Type* _t8 = make_sequence_type(elem_type);
         return _t8;
     }
@@ -42892,15 +42946,15 @@ Type* Checker_check_struct_lit(Checker* self, Sym* type_name_sym, LyricSlice_Typ
                 limit = _t124;
             }
             range_gen_t* _t125 = range_init(0, limit);
-            range_gen_t* _gen_iter_190 = _t125;
-            while (range_next(_gen_iter_190)) {
-                int32_t i = _gen_iter_190->_value;
+            range_gen_t* _gen_iter_191 = _t125;
+            while (range_next(_gen_iter_191)) {
+                int32_t i = _gen_iter_191->_value;
                 TypeExpr* _t126 = type_args.data[i];
                 Type* _t127 = Checker_resolve_type_expr(self, _t126);
                 LyricSlice_Typeptr _t128 = ({ lyric_push(&resolved_args, _t127, LyricSlice_Typeptr); resolved_args; });
                 _t128;
             }
-            free(_gen_iter_190);
+            free(_gen_iter_191);
             TypeInfo* _t129 = lyric_unwrap_class(info);
             Type* _t130 = _t129->type_val;
             TypeKind _t131 = _t130->kind;
@@ -43140,16 +43194,16 @@ Type* Checker_check_call(Checker* self, Expr* call_expr, Expr* func_expr, LyricS
                         limit = _t34;
                     }
                     range_gen_t* _t35 = range_init(0, limit);
-                    range_gen_t* _gen_iter_191 = _t35;
-                    while (range_next(_gen_iter_191)) {
-                        int32_t i = _gen_iter_191->_value;
+                    range_gen_t* _gen_iter_192 = _t35;
+                    while (range_next(_gen_iter_192)) {
+                        int32_t i = _gen_iter_192->_value;
                         lyric_string _t36 = tpnames.data[i];
                         Sym* _t37 = sym(_t36);
                         TypeExpr* _t38 = type_args.data[i];
                         Type* _t39 = Checker_resolve_type_expr(self, _t38);
                         Dict_CSym_CType_set(bindings, _t37, _t39);
                     }
-                    free(_gen_iter_191);
+                    free(_gen_iter_192);
                     int32_t _t41 = type_args.len;
                     bool _t42 = (_t41 == 0);
                     if (_t42) {
@@ -43963,9 +44017,9 @@ Dict_CSym_CType* Checker_build_type_arg_subst(Checker* self, Type* recv_type) {
         limit = _t22;
     }
     range_gen_t* _t23 = range_init(0, limit);
-    range_gen_t* _gen_iter_192 = _t23;
-    while (range_next(_gen_iter_192)) {
-        int32_t i = _gen_iter_192->_value;
+    range_gen_t* _gen_iter_193 = _t23;
+    while (range_next(_gen_iter_193)) {
+        int32_t i = _gen_iter_193->_value;
         TypeInfo* _t24 = lyric_unwrap_class(info);
         LyricSlice_lyric_string _t25 = _t24->type_param_names;
         lyric_string _t26 = _t25.data[i];
@@ -43974,7 +44028,7 @@ Dict_CSym_CType* Checker_build_type_arg_subst(Checker* self, Type* recv_type) {
         Type* _t29 = _t28.data[i];
         Dict_CSym_CType_set(subst, _t27, _t29);
     }
-    free(_gen_iter_192);
+    free(_gen_iter_193);
     return subst;
     if (subst && --subst->_rc == 0) Dict_CSym_CType_destroy(subst);
 }
@@ -44034,9 +44088,9 @@ Type* Checker_try_resolve_impl_alias_method(Checker* self, Expr* call_expr, Expr
         limit = _t25;
     }
     range_gen_t* _t26 = range_init(0, limit);
-    range_gen_t* _gen_iter_193 = _t26;
-    while (range_next(_gen_iter_193)) {
-        int32_t i = _gen_iter_193->_value;
+    range_gen_t* _gen_iter_194 = _t26;
+    while (range_next(_gen_iter_194)) {
+        int32_t i = _gen_iter_194->_value;
         TypeParam* _t27 = iface_tps.data[i];
         Sym* _t28 = _t27->name;
         bool _t29 = (_t28 == NULL);
@@ -44070,7 +44124,7 @@ Type* Checker_try_resolve_impl_alias_method(Checker* self, Expr* call_expr, Expr
         }
         }
     }
-    free(_gen_iter_193);
+    free(_gen_iter_194);
     lyric_string _t44 = sym_to_string(method);
     lyric_string method_str = _t44;
     LyricSlice_ImplMappingptr _t45 = ImplBlock___ibm_children(ib);
@@ -44254,14 +44308,14 @@ Type* Checker_check_method_call(Checker* self, Expr* call_expr, Expr* receiver, 
                 }
                 int32_t _t36 = args.len;
                 range_gen_t* _t37 = range_init(0, _t36);
-                range_gen_t* _gen_iter_194 = _t37;
-                while (range_next(_gen_iter_194)) {
-                    int32_t i = _gen_iter_194->_value;
+                range_gen_t* _gen_iter_195 = _t37;
+                while (range_next(_gen_iter_195)) {
+                    int32_t i = _gen_iter_195->_value;
                     Expr* _t38 = args.data[i];
                     Type* _t39 = Checker_check_expr(self, _t38);
                     _t39;
                 }
-                free(_gen_iter_194);
+                free(_gen_iter_195);
             }
             ExprKind _t40 = (ExprKind){.tag = ExprKind_Ident, .data.ident = {method}};
             Span _t41 = receiver->span;
@@ -48182,17 +48236,17 @@ void Checker_validate_relation_hints(Checker* self, File* file) {
     Dict_CSym_bool* validated = _t1;
     int32_t _t2 = blocks.len;
     range_gen_t* _t3 = range_init(0, _t2);
-    range_gen_t* _gen_iter_195 = _t3;
-    while (range_next(_gen_iter_195)) {
-        int32_t bi = _gen_iter_195->_value;
+    range_gen_t* _gen_iter_196 = _t3;
+    while (range_next(_gen_iter_196)) {
+        int32_t bi = _gen_iter_196->_value;
         LyricBlock* _t4 = blocks.data[bi];
         LyricSlice_ImplBlockptr _t5 = LyricBlock___ib_children(_t4);
         LyricSlice_ImplBlockptr impls = _t5;
         int32_t _t6 = impls.len;
         range_gen_t* _t7 = range_init(0, _t6);
-        range_gen_t* _gen_iter_196 = _t7;
-        while (range_next(_gen_iter_196)) {
-            int32_t ii = _gen_iter_196->_value;
+        range_gen_t* _gen_iter_197 = _t7;
+        while (range_next(_gen_iter_197)) {
+            int32_t ii = _gen_iter_197->_value;
             ImplBlock* _t8 = impls.data[ii];
             ImplBlock* ib = _t8;
             LyricOpt_RelationKind _t9 = ib->kind;
@@ -48230,9 +48284,9 @@ void Checker_validate_relation_hints(Checker* self, File* file) {
             InterfaceDecl* _t24 = _t23->value;
             Checker_validate_one_hint_interface(self, ib, _t24);
         }
-        free(_gen_iter_196);
+        free(_gen_iter_197);
     }
-    free(_gen_iter_195);
+    free(_gen_iter_196);
     if (validated && --validated->_rc == 0) Dict_CSym_bool_destroy(validated);
 }
 
@@ -48299,9 +48353,9 @@ void Checker_validate_one_hint_interface(Checker* self, ImplBlock* ib, Interface
     LyricSlice_InterfaceFieldDeclptr fields = _t39;
     int32_t _t40 = fields.len;
     range_gen_t* _t41 = range_init(0, _t40);
-    range_gen_t* _gen_iter_197 = _t41;
-    while (range_next(_gen_iter_197)) {
-        int32_t fi = _gen_iter_197->_value;
+    range_gen_t* _gen_iter_198 = _t41;
+    while (range_next(_gen_iter_198)) {
+        int32_t fi = _gen_iter_198->_value;
         InterfaceFieldDecl* _t42 = fields.data[fi];
         InterfaceFieldDecl* f = _t42;
         lyric_string __ifexpr_43 = LYRIC_STR_EMPTY;
@@ -48354,14 +48408,14 @@ void Checker_validate_one_hint_interface(Checker* self, ImplBlock* ib, Interface
             return;
         }
     }
-    free(_gen_iter_197);
+    free(_gen_iter_198);
     LyricSlice_DestructorBlockptr _t75 = InterfaceDecl___idb_children(iface);
     LyricSlice_DestructorBlockptr destrs = _t75;
     int32_t _t76 = destrs.len;
     range_gen_t* _t77 = range_init(0, _t76);
-    range_gen_t* _gen_iter_198 = _t77;
-    while (range_next(_gen_iter_198)) {
-        int32_t di = _gen_iter_198->_value;
+    range_gen_t* _gen_iter_199 = _t77;
+    while (range_next(_gen_iter_199)) {
+        int32_t di = _gen_iter_199->_value;
         DestructorBlock* _t78 = destrs.data[di];
         DestructorBlock* d = _t78;
         Sym* _t79 = d->type_param;
@@ -48393,14 +48447,14 @@ void Checker_validate_one_hint_interface(Checker* self, ImplBlock* ib, Interface
             return;
         }
     }
-    free(_gen_iter_198);
+    free(_gen_iter_199);
     LyricSlice_FuncDeclptr _t96 = InterfaceDecl___im_children(iface);
     LyricSlice_FuncDeclptr methods = _t96;
     int32_t _t97 = methods.len;
     range_gen_t* _t98 = range_init(0, _t97);
-    range_gen_t* _gen_iter_199 = _t98;
-    while (range_next(_gen_iter_199)) {
-        int32_t mi = _gen_iter_199->_value;
+    range_gen_t* _gen_iter_200 = _t98;
+    while (range_next(_gen_iter_200)) {
+        int32_t mi = _gen_iter_200->_value;
         FuncDecl* _t99 = methods.data[mi];
         FuncDecl* m = _t99;
         Sym* _t100 = m->receiver_type;
@@ -48446,7 +48500,7 @@ void Checker_validate_one_hint_interface(Checker* self, ImplBlock* ib, Interface
             return;
         }
     }
-    free(_gen_iter_199);
+    free(_gen_iter_200);
     if (prefix.cap > 0 && prefix.data) free(prefix.data);
     if (sides.cap > 0 && sides.data) free(sides.data);
 }
@@ -48458,17 +48512,17 @@ void Checker_validate_impl_satisfies_abstract(Checker* self, File* file) {
     LyricSlice_LyricBlockptr blocks = _t1;
     int32_t _t2 = blocks.len;
     range_gen_t* _t3 = range_init(0, _t2);
-    range_gen_t* _gen_iter_200 = _t3;
-    while (range_next(_gen_iter_200)) {
-        int32_t bi = _gen_iter_200->_value;
+    range_gen_t* _gen_iter_201 = _t3;
+    while (range_next(_gen_iter_201)) {
+        int32_t bi = _gen_iter_201->_value;
         LyricBlock* _t4 = blocks.data[bi];
         LyricSlice_ClassDeclptr _t5 = LyricBlock___cd_children(_t4);
         LyricSlice_ClassDeclptr classes = _t5;
         int32_t _t6 = classes.len;
         range_gen_t* _t7 = range_init(0, _t6);
-        range_gen_t* _gen_iter_201 = _t7;
-        while (range_next(_gen_iter_201)) {
-            int32_t ci = _gen_iter_201->_value;
+        range_gen_t* _gen_iter_202 = _t7;
+        while (range_next(_gen_iter_202)) {
+            int32_t ci = _gen_iter_202->_value;
             ClassDecl* _t8 = classes.data[ci];
             ClassDecl* c = _t8;
             Sym* _t9 = c->name;
@@ -48479,22 +48533,22 @@ void Checker_validate_impl_satisfies_abstract(Checker* self, File* file) {
                 Dict_CSym_CClassDecl_set(class_decls, _t12, c);
             }
         }
-        free(_gen_iter_201);
+        free(_gen_iter_202);
     }
-    free(_gen_iter_200);
+    free(_gen_iter_201);
     int32_t _t14 = blocks.len;
     range_gen_t* _t15 = range_init(0, _t14);
-    range_gen_t* _gen_iter_202 = _t15;
-    while (range_next(_gen_iter_202)) {
-        int32_t bi = _gen_iter_202->_value;
+    range_gen_t* _gen_iter_203 = _t15;
+    while (range_next(_gen_iter_203)) {
+        int32_t bi = _gen_iter_203->_value;
         LyricBlock* _t16 = blocks.data[bi];
         LyricSlice_ImplBlockptr _t17 = LyricBlock___ib_children(_t16);
         LyricSlice_ImplBlockptr impls = _t17;
         int32_t _t18 = impls.len;
         range_gen_t* _t19 = range_init(0, _t18);
-        range_gen_t* _gen_iter_203 = _t19;
-        while (range_next(_gen_iter_203)) {
-            int32_t ii = _gen_iter_203->_value;
+        range_gen_t* _gen_iter_204 = _t19;
+        while (range_next(_gen_iter_204)) {
+            int32_t ii = _gen_iter_204->_value;
             ImplBlock* _t20 = impls.data[ii];
             ImplBlock* ib = _t20;
             LyricOpt_RelationKind _t21 = ib->kind;
@@ -48505,9 +48559,9 @@ void Checker_validate_impl_satisfies_abstract(Checker* self, File* file) {
             }
             Checker_validate_one_impl_satisfies(self, ib, class_decls);
         }
-        free(_gen_iter_203);
+        free(_gen_iter_204);
     }
-    free(_gen_iter_202);
+    free(_gen_iter_203);
     if (class_decls && --class_decls->_rc == 0) Dict_CSym_CClassDecl_destroy(class_decls);
 }
 
@@ -48547,9 +48601,9 @@ void Checker_validate_one_impl_satisfies(Checker* self, ImplBlock* ib, Dict_CSym
         limit = _t17;
     }
     range_gen_t* _t18 = range_init(0, limit);
-    range_gen_t* _gen_iter_204 = _t18;
-    while (range_next(_gen_iter_204)) {
-        int32_t i = _gen_iter_204->_value;
+    range_gen_t* _gen_iter_205 = _t18;
+    while (range_next(_gen_iter_205)) {
+        int32_t i = _gen_iter_205->_value;
         TypeParam* _t19 = itp.data[i];
         Sym* _t20 = _t19->name;
         bool _t21 = (_t20 != 0);
@@ -48582,16 +48636,16 @@ void Checker_validate_one_impl_satisfies(Checker* self, ImplBlock* ib, Dict_CSym
             }
         }
     }
-    free(_gen_iter_204);
+    free(_gen_iter_205);
     Dict_CSym_bool* _t39 = _lyric_slab_alloc_Dict_CSym_bool();
     Dict_CSym_bool* bound_by_impl = _t39;
     LyricSlice_ImplMappingptr _t40 = ImplBlock___ibm_children(ib);
     LyricSlice_ImplMappingptr mappings = _t40;
     int32_t _t41 = mappings.len;
     range_gen_t* _t42 = range_init(0, _t41);
-    range_gen_t* _gen_iter_205 = _t42;
-    while (range_next(_gen_iter_205)) {
-        int32_t mpi = _gen_iter_205->_value;
+    range_gen_t* _gen_iter_206 = _t42;
+    while (range_next(_gen_iter_206)) {
+        int32_t mpi = _gen_iter_206->_value;
         ImplMapping* _t43 = mappings.data[mpi];
         ImplMapping* mp = _t43;
         Sym* _t44 = mp->method_name;
@@ -48616,16 +48670,16 @@ void Checker_validate_one_impl_satisfies(Checker* self, ImplBlock* ib, Dict_CSym
         Sym* _t56 = sym(key);
         Dict_CSym_bool_set(bound_by_impl, _t56, true);
     }
-    free(_gen_iter_205);
+    free(_gen_iter_206);
     LyricSlice_lyric_string _t58 = lyric_slice_empty(LyricSlice_lyric_string);
     LyricSlice_lyric_string missing = _t58;
     LyricSlice_FuncDeclptr _t59 = InterfaceDecl___im_children(iface);
     LyricSlice_FuncDeclptr imethods = _t59;
     int32_t _t60 = imethods.len;
     range_gen_t* _t61 = range_init(0, _t60);
-    range_gen_t* _gen_iter_206 = _t61;
-    while (range_next(_gen_iter_206)) {
-        int32_t mi = _gen_iter_206->_value;
+    range_gen_t* _gen_iter_207 = _t61;
+    while (range_next(_gen_iter_207)) {
+        int32_t mi = _gen_iter_207->_value;
         FuncDecl* _t62 = imethods.data[mi];
         FuncDecl* m = _t62;
         Block* _t63 = m->body;
@@ -48688,9 +48742,9 @@ void Checker_validate_one_impl_satisfies(Checker* self, ImplBlock* ib, Dict_CSym
             LyricSlice_FuncDeclptr own_methods = _t92;
             int32_t _t93 = own_methods.len;
             range_gen_t* _t94 = range_init(0, _t93);
-            range_gen_t* _gen_iter_207 = _t94;
-            while (range_next(_gen_iter_207)) {
-                int32_t omi = _gen_iter_207->_value;
+            range_gen_t* _gen_iter_208 = _t94;
+            while (range_next(_gen_iter_208)) {
+                int32_t omi = _gen_iter_208->_value;
                 FuncDecl* _t95 = own_methods.data[omi];
                 FuncDecl* om = _t95;
                 Sym* _t96 = om->name;
@@ -48708,7 +48762,7 @@ void Checker_validate_one_impl_satisfies(Checker* self, ImplBlock* ib, Dict_CSym
                     found = true;
                 }
             }
-            free(_gen_iter_207);
+            free(_gen_iter_208);
         }
         bool _t103 = (!found);
         if (_t103) {
@@ -48726,14 +48780,14 @@ void Checker_validate_one_impl_satisfies(Checker* self, ImplBlock* ib, Dict_CSym
             _t114;
         }
     }
-    free(_gen_iter_206);
+    free(_gen_iter_207);
     LyricSlice_InterfaceFieldDeclptr _t115 = InterfaceDecl___ifd_children(iface);
     LyricSlice_InterfaceFieldDeclptr ifields = _t115;
     int32_t _t116 = ifields.len;
     range_gen_t* _t117 = range_init(0, _t116);
-    range_gen_t* _gen_iter_208 = _t117;
-    while (range_next(_gen_iter_208)) {
-        int32_t fi = _gen_iter_208->_value;
+    range_gen_t* _gen_iter_209 = _t117;
+    while (range_next(_gen_iter_209)) {
+        int32_t fi = _gen_iter_209->_value;
         InterfaceFieldDecl* _t118 = ifields.data[fi];
         InterfaceFieldDecl* f = _t118;
         Sym* _t119 = f->name;
@@ -48791,7 +48845,7 @@ void Checker_validate_one_impl_satisfies(Checker* self, ImplBlock* ib, Dict_CSym
             _t152;
         }
     }
-    free(_gen_iter_208);
+    free(_gen_iter_209);
     int32_t _t153 = missing.len;
     bool _t154 = (_t153 > 0);
     if (_t154) {
@@ -48801,9 +48855,9 @@ void Checker_validate_one_impl_satisfies(Checker* self, ImplBlock* ib, Dict_CSym
         bool first = true;
         int32_t _t157 = impl_args.len;
         range_gen_t* _t158 = range_init(0, _t157);
-        range_gen_t* _gen_iter_209 = _t158;
-        while (range_next(_gen_iter_209)) {
-            int32_t ai = _gen_iter_209->_value;
+        range_gen_t* _gen_iter_210 = _t158;
+        while (range_next(_gen_iter_210)) {
+            int32_t ai = _gen_iter_210->_value;
             bool _t159 = (!first);
             if (_t159) {
                 lyric_string _t160 = lyric_str_concat(head, LYRIC_STR(", "));
@@ -48835,22 +48889,22 @@ void Checker_validate_one_impl_satisfies(Checker* self, ImplBlock* ib, Dict_CSym
                 head = _t173;
             }
         }
-        free(_gen_iter_209);
+        free(_gen_iter_210);
         lyric_string _t174 = lyric_str_concat(head, LYRIC_STR(">"));
         head = _t174;
         lyric_string _t175 = lyric_str_concat(head, LYRIC_STR(" does not satisfy abstract members:"));
         lyric_string msg = _t175;
         int32_t _t176 = missing.len;
         range_gen_t* _t177 = range_init(0, _t176);
-        range_gen_t* _gen_iter_210 = _t177;
-        while (range_next(_gen_iter_210)) {
-            int32_t mi = _gen_iter_210->_value;
+        range_gen_t* _gen_iter_211 = _t177;
+        while (range_next(_gen_iter_211)) {
+            int32_t mi = _gen_iter_211->_value;
             lyric_string _t178 = lyric_str_concat(msg, LYRIC_STR("\n  - "));
             lyric_string _t179 = missing.data[mi];
             lyric_string _t180 = lyric_str_concat(_t178, _t179);
             msg = _t180;
         }
-        free(_gen_iter_210);
+        free(_gen_iter_211);
         Span _t181 = ib->span;
         Checker_error_at(self, _t181, msg);
         if (head.cap > 0 && head.data) free(head.data);
@@ -51965,9 +52019,9 @@ LyricSlice_LFuncDeclptr Lowerer_lower_impl_block(Lowerer* self, ImplBlock* ib) {
             lyric_push(&call_args, _t157, LyricSlice_LValueptr);
             int32_t _t159 = params.len;
             range_gen_t* _t160 = range_init(1, _t159);
-            range_gen_t* _gen_iter_211 = _t160;
-            while (range_next(_gen_iter_211)) {
-                int32_t i = _gen_iter_211->_value;
+            range_gen_t* _gen_iter_212 = _t160;
+            while (range_next(_gen_iter_212)) {
+                int32_t i = _gen_iter_212->_value;
                 LParam _t161 = params.data[i];
                 lyric_string _t162 = _t161.name;
                 LParam _t163 = params.data[i];
@@ -51976,20 +52030,20 @@ LyricSlice_LFuncDeclptr Lowerer_lower_impl_block(Lowerer* self, ImplBlock* ib) {
                 LyricSlice_LValueptr _t166 = ({ lyric_push(&call_args, _t165, LyricSlice_LValueptr); call_args; });
                 _t166;
             }
-            free(_gen_iter_211);
+            free(_gen_iter_212);
             LyricSlice_bool _t167 = lyric_slice_lit(LyricSlice_bool, bool, false);
             LyricSlice_bool call_mut_args = _t167;
             int32_t _t168 = params.len;
             range_gen_t* _t169 = range_init(1, _t168);
-            range_gen_t* _gen_iter_212 = _t169;
-            while (range_next(_gen_iter_212)) {
-                int32_t i = _gen_iter_212->_value;
+            range_gen_t* _gen_iter_213 = _t169;
+            while (range_next(_gen_iter_213)) {
+                int32_t i = _gen_iter_213->_value;
                 LParam _t170 = params.data[i];
                 bool _t171 = _t170.mutable;
                 LyricSlice_bool _t172 = ({ lyric_push(&call_mut_args, _t171, LyricSlice_bool); call_mut_args; });
                 _t172;
             }
-            free(_gen_iter_212);
+            free(_gen_iter_213);
             self->temp_id = 0;
             LyricSlice_LStmtptr _t173 = Lowerer_save_stmts(self);
             LyricSlice_LStmtptr saved = _t173;
@@ -58575,13 +58629,13 @@ void Lowerer_lower_arm_body(Lowerer* self, Block* body, lyric_string result_name
     int32_t _t9 = stmts.len;
     int32_t _t10 = (_t9 - 1);
     range_gen_t* _t11 = range_init(0, _t10);
-    range_gen_t* _gen_iter_213 = _t11;
-    while (range_next(_gen_iter_213)) {
-        int32_t i = _gen_iter_213->_value;
+    range_gen_t* _gen_iter_214 = _t11;
+    while (range_next(_gen_iter_214)) {
+        int32_t i = _gen_iter_214->_value;
         Stmt* _t12 = stmts.data[i];
         Lowerer_lower_stmt(self, _t12);
     }
-    free(_gen_iter_213);
+    free(_gen_iter_214);
     int32_t _t14 = stmts.len;
     int32_t _t15 = (_t14 - 1);
     Stmt* _t16 = stmts.data[_t15];
@@ -100833,9 +100887,9 @@ bool cmd_compile(LyricSlice_lyric_string args) {
             LyricSlice_lyric_string entries = dir_result;
             int32_t _t50 = entries.len;
             range_gen_t* _t51 = range_init(0, _t50);
-            range_gen_t* _gen_iter_214 = _t51;
-            while (range_next(_gen_iter_214)) {
-                int32_t j = _gen_iter_214->_value;
+            range_gen_t* _gen_iter_215 = _t51;
+            while (range_next(_gen_iter_215)) {
+                int32_t j = _gen_iter_215->_value;
                 lyric_string _t52 = entries.data[j];
                 lyric_string entry = _t52;
                 int32_t _t53 = entry.len;
@@ -100857,7 +100911,7 @@ bool cmd_compile(LyricSlice_lyric_string args) {
                     inputs = _t63;
                 }
             }
-            free(_gen_iter_214);
+            free(_gen_iter_215);
             int32_t _t64 = inputs.len;
             bool _t65 = (_t64 == 0);
             if (_t65) {

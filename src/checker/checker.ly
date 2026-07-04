@@ -2119,6 +2119,30 @@ lyric checker {
           subst.set(sym(sym_to_string(itp[i].name!)), self.resolve_type_expr(impl_args[i].type_expr!))
         }
       }
+      // For single-param interfaces, register on each bound class's
+      // implements_list so is_assignable(Class, Interface) succeeds.
+      if len(itp) <= 1 {
+        for i in range(0, limit) {
+          if itp[i].name != null {
+            let bound = subst.get(itp[i].name!)
+            if bound != null {
+              let cname = type_name(bound!.value)
+              if cname != "" {
+                let cinfo = self.registry.lookup(cname)
+                if cinfo != null {
+                  let mut already = false
+                  for existing in cinfo!.implements_list {
+                    if existing == iname { already = true }
+                  }
+                  if !already {
+                    append(cinfo!.implements_list, iname)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
 
     // Process each mapping
