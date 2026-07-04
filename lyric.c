@@ -50993,154 +50993,242 @@ LProgram* Lowerer_lower_file(Lowerer* self, File* file) {
                 _t70;
             }
         }
-        LyricSlice_TypeAliasDeclptr _t71 = LyricBlock___ta_children(block);
+        LyricSlice_ImplBlockptr _t71 = LyricBlock___ib_children(block);
         for (int32_t _idx = 0; _idx < _t71.len; _idx++) {
-            TypeAliasDecl* ta = _t71.data[_idx];
-            Sym* _t72 = ta->name;
+            ImplBlock* ib = _t71.data[_idx];
+            Sym* _t72 = ib->interface_name;
             bool _t73 = (_t72 == NULL);
-            bool _t74 = (!_t73);
-            if (_t74) {
-                Sym* _t75 = ta->name;
-                Sym* _t76 = lyric_unwrap_class(_t75);
-                lyric_string _t77 = _t76->name;
-                TypeExpr* _t78 = ta->type_expr;
-                LType* _t79 = Lowerer_lower_type(self, _t78);
-                bool _t80 = ta->is_public;
-                LTypeDef* _t81 = _lyric_slab_alloc_LTypeDef();
-                _t81->name = _t77;
-                _t81->typ = _t79;
-                _t81->is_exported = _t80;
-                LyricSlice_LTypeDefptr _t82 = ({ lyric_push(&type_defs, _t81, LyricSlice_LTypeDefptr); type_defs; });
-                _t82;
+            if (_t73) {
+                continue;
             }
-        }
-        LyricSlice_RelationDeclptr _t83 = LyricBlock___rd_children(block);
-        for (int32_t _idx = 0; _idx < _t83.len; _idx++) {
-            RelationDecl* rel = _t83.data[_idx];
-            RelationKind _t84 = rel->kind;
-            int32_t _t85 = _t84;
-            bool _t86 = (_t85 == 0);
+            Sym* _t74 = ib->interface_name;
+            Sym* _t75 = lyric_unwrap_class(_t74);
+            lyric_string _t76 = _t75->name;
+            lyric_string iface_name = _t76;
+            Dict_CSym_CLInterfaceDecl* _t77 = self->lowered_ifaces;
+            Dict_CSym_CLInterfaceDecl* _t78 = lyric_unwrap_class(_t77);
+            Sym* _t79 = sym(iface_name);
+            DictEntry_CSym_CLInterfaceDecl* _t80 = Dict_CSym_CLInterfaceDecl_get(_t78, _t79);
+            DictEntry_CSym_CLInterfaceDecl* iface_entry = _t80;
+            bool _t81 = (iface_entry == NULL);
+            if (_t81) {
+                continue;
+            }
+            DictEntry_CSym_CLInterfaceDecl* _t82 = lyric_unwrap_class(iface_entry);
+            LInterfaceDecl* _t83 = _t82->value;
+            LInterfaceDecl* iface = _t83;
+            LyricSlice_LTypeParam _t84 = iface->type_params;
+            int32_t _t85 = _t84.len;
+            bool _t86 = (_t85 > 1);
             if (_t86) {
-                RelationSide _t87 = rel->child;
-                Sym* _t88 = _t87.type_name;
-                bool _t89 = (_t88 == NULL);
-                bool _t90 = (!_t89);
-                if (_t90) {
-                    RelationSide _t91 = rel->child;
-                    Sym* _t92 = _t91.type_name;
-                    Sym* _t93 = lyric_unwrap_class(_t92);
-                    lyric_string _t94 = _t93->name;
-                    Sym* _t95 = sym(_t94);
-                    Dict_CSym_bool_set(owned_classes, _t95, true);
+                continue;
+            }
+            LyricSlice_ImplTypeArgptr _t87 = ImplBlock___ib_arg_children(ib);
+            LyricSlice_ImplTypeArgptr ib_args = _t87;
+            int32_t k = 0;
+            LyricSlice_LTypeParam _t88 = iface->type_params;
+            for (int32_t _idx = 0; _idx < _t88.len; _idx++) {
+                LTypeParam tp = _t88.data[_idx];
+                int32_t _t89 = ib_args.len;
+                bool _t90 = (k < _t89);
+                bool _sc91 = false;
+                _sc91 = _t90;
+                if (_sc91) {
+                    ImplTypeArg* _t92 = ib_args.data[k];
+                    TypeExpr* _t93 = _t92->type_expr;
+                    bool _t94 = (_t93 == NULL);
+                    bool _t95 = (!_t94);
+                    _sc91 = _t95;
+                }
+                if (_sc91) {
+                    ImplTypeArg* _t96 = ib_args.data[k];
+                    TypeExpr* _t97 = _t96->type_expr;
+                    TypeExpr* _t98 = lyric_unwrap_class(_t97);
+                    LType* _t99 = Lowerer_lower_type(self, _t98);
+                    LType* lt = _t99;
+                    bool _t100 = (lt == NULL);
+                    bool _t101 = (!_t100);
+                    if (_t101) {
+                        LType* _t102 = lyric_unwrap_class(lt);
+                        lyric_string _t103 = _t102->name;
+                        lyric_string class_name = _t103;
+                        for (int32_t _idx = 0; _idx < classes.len; _idx++) {
+                            LClassDecl* c = classes.data[_idx];
+                            lyric_string _t104 = c->name;
+                            bool _t105 = lyric_str_eq(_t104, class_name);
+                            if (_t105) {
+                                bool already = false;
+                                LyricSlice_lyric_string _t106 = c->implements;
+                                for (int32_t _idx = 0; _idx < _t106.len; _idx++) {
+                                    lyric_string existing = _t106.data[_idx];
+                                    bool _t107 = lyric_str_eq(existing, iface_name);
+                                    if (_t107) {
+                                        already = true;
+                                    }
+                                }
+                                bool _t108 = (!already);
+                                if (_t108) {
+                                    LyricSlice_lyric_string _t109 = c->implements;
+                                    LyricSlice_lyric_string _t110 = ({ lyric_push(&_t109, iface_name, LyricSlice_lyric_string); _t109; });
+                                    c->implements = _t109;
+                                    _t110;
+                                }
+                            }
+                        }
+                    }
+                }
+                int32_t _t111 = (k + 1);
+                k = _t111;
+            }
+        }
+        LyricSlice_TypeAliasDeclptr _t112 = LyricBlock___ta_children(block);
+        for (int32_t _idx = 0; _idx < _t112.len; _idx++) {
+            TypeAliasDecl* ta = _t112.data[_idx];
+            Sym* _t113 = ta->name;
+            bool _t114 = (_t113 == NULL);
+            bool _t115 = (!_t114);
+            if (_t115) {
+                Sym* _t116 = ta->name;
+                Sym* _t117 = lyric_unwrap_class(_t116);
+                lyric_string _t118 = _t117->name;
+                TypeExpr* _t119 = ta->type_expr;
+                LType* _t120 = Lowerer_lower_type(self, _t119);
+                bool _t121 = ta->is_public;
+                LTypeDef* _t122 = _lyric_slab_alloc_LTypeDef();
+                _t122->name = _t118;
+                _t122->typ = _t120;
+                _t122->is_exported = _t121;
+                LyricSlice_LTypeDefptr _t123 = ({ lyric_push(&type_defs, _t122, LyricSlice_LTypeDefptr); type_defs; });
+                _t123;
+            }
+        }
+        LyricSlice_RelationDeclptr _t124 = LyricBlock___rd_children(block);
+        for (int32_t _idx = 0; _idx < _t124.len; _idx++) {
+            RelationDecl* rel = _t124.data[_idx];
+            RelationKind _t125 = rel->kind;
+            int32_t _t126 = _t125;
+            bool _t127 = (_t126 == 0);
+            if (_t127) {
+                RelationSide _t128 = rel->child;
+                Sym* _t129 = _t128.type_name;
+                bool _t130 = (_t129 == NULL);
+                bool _t131 = (!_t130);
+                if (_t131) {
+                    RelationSide _t132 = rel->child;
+                    Sym* _t133 = _t132.type_name;
+                    Sym* _t134 = lyric_unwrap_class(_t133);
+                    lyric_string _t135 = _t134->name;
+                    Sym* _t136 = sym(_t135);
+                    Dict_CSym_bool_set(owned_classes, _t136, true);
                 }
             }
         }
-        LyricSlice_ConstDeclptr _t97 = LyricBlock___con_children(block);
-        for (int32_t _idx = 0; _idx < _t97.len; _idx++) {
-            ConstDecl* c = _t97.data[_idx];
-            Sym* _t98 = c->name;
-            bool _t99 = (_t98 == NULL);
-            bool _t100 = (!_t99);
-            if (_t100) {
-                LType* __ifexpr_101 = NULL;
-                TypeExpr* _t102 = c->type_expr;
-                bool _t103 = (_t102 == NULL);
-                bool _t104 = (!_t103);
-                if (_t104) {
-                    TypeExpr* _t105 = c->type_expr;
-                    LType* _t106 = Lowerer_lower_type(self, _t105);
-                    __ifexpr_101 = _t106;
+        LyricSlice_ConstDeclptr _t138 = LyricBlock___con_children(block);
+        for (int32_t _idx = 0; _idx < _t138.len; _idx++) {
+            ConstDecl* c = _t138.data[_idx];
+            Sym* _t139 = c->name;
+            bool _t140 = (_t139 == NULL);
+            bool _t141 = (!_t140);
+            if (_t141) {
+                LType* __ifexpr_142 = NULL;
+                TypeExpr* _t143 = c->type_expr;
+                bool _t144 = (_t143 == NULL);
+                bool _t145 = (!_t144);
+                if (_t145) {
+                    TypeExpr* _t146 = c->type_expr;
+                    LType* _t147 = Lowerer_lower_type(self, _t146);
+                    __ifexpr_142 = _t147;
                 } else {
-                    Expr* _t107 = c->value;
-                    LType* _t108 = Lowerer_expr_type(self, _t107);
-                    __ifexpr_101 = _t108;
+                    Expr* _t148 = c->value;
+                    LType* _t149 = Lowerer_expr_type(self, _t148);
+                    __ifexpr_142 = _t149;
                 }
-                LType* ct = __ifexpr_101;
-                LValue* __ifexpr_109 = NULL;
-                Expr* _t110 = c->value;
-                bool _t111 = (_t110 == NULL);
-                bool _t112 = (!_t111);
-                if (_t112) {
-                    LyricSlice_LStmtptr _t113 = Lowerer_save_stmts(self);
-                    LyricSlice_LStmtptr saved = _t113;
-                    Expr* _t114 = c->value;
-                    LValue* _t115 = Lowerer_lower_expr(self, _t114);
-                    LValue* v = _t115;
+                LType* ct = __ifexpr_142;
+                LValue* __ifexpr_150 = NULL;
+                Expr* _t151 = c->value;
+                bool _t152 = (_t151 == NULL);
+                bool _t153 = (!_t152);
+                if (_t153) {
+                    LyricSlice_LStmtptr _t154 = Lowerer_save_stmts(self);
+                    LyricSlice_LStmtptr saved = _t154;
+                    Expr* _t155 = c->value;
+                    LValue* _t156 = Lowerer_lower_expr(self, _t155);
+                    LValue* v = _t156;
                     Lowerer_restore_stmts(self, saved);
-                    __ifexpr_109 = v;
+                    __ifexpr_150 = v;
                 } else {
-                    LValue* _t117 = make_null_val(ct);
-                    __ifexpr_109 = _t117;
+                    LValue* _t158 = make_null_val(ct);
+                    __ifexpr_150 = _t158;
                 }
-                LValue* init = __ifexpr_109;
-                Sym* _t118 = c->name;
-                Sym* _t119 = lyric_unwrap_class(_t118);
-                lyric_string _t120 = _t119->name;
-                LVarDeclData _t121 = (LVarDeclData){.name = _t120, .typ = ct, .init = init, .mutable = false, .is_ref = false};
-                LyricSlice_LVarDeclData _t122 = ({ lyric_push(&globals, _t121, LyricSlice_LVarDeclData); globals; });
-                _t122;
+                LValue* init = __ifexpr_150;
+                Sym* _t159 = c->name;
+                Sym* _t160 = lyric_unwrap_class(_t159);
+                lyric_string _t161 = _t160->name;
+                LVarDeclData _t162 = (LVarDeclData){.name = _t161, .typ = ct, .init = init, .mutable = false, .is_ref = false};
+                LyricSlice_LVarDeclData _t163 = ({ lyric_push(&globals, _t162, LyricSlice_LVarDeclData); globals; });
+                _t163;
             }
         }
     }
-    lyric_string __ifexpr_123 = LYRIC_STR_EMPTY;
-    File* _t124 = lyric_unwrap_class(file);
-    LyricSlice_LyricBlockptr _t125 = File___fb_children(_t124);
-    int32_t _t126 = _t125.len;
-    bool _t127 = (_t126 > 0);
-    bool _sc128 = false;
-    _sc128 = _t127;
-    if (_sc128) {
-        File* _t129 = lyric_unwrap_class(file);
-        LyricSlice_LyricBlockptr _t130 = File___fb_children(_t129);
-        LyricBlock* _t131 = _t130.data[0];
-        Sym* _t132 = _t131->name;
-        bool _t133 = (_t132 == NULL);
-        bool _t134 = (!_t133);
-        _sc128 = _t134;
+    lyric_string __ifexpr_164 = LYRIC_STR_EMPTY;
+    File* _t165 = lyric_unwrap_class(file);
+    LyricSlice_LyricBlockptr _t166 = File___fb_children(_t165);
+    int32_t _t167 = _t166.len;
+    bool _t168 = (_t167 > 0);
+    bool _sc169 = false;
+    _sc169 = _t168;
+    if (_sc169) {
+        File* _t170 = lyric_unwrap_class(file);
+        LyricSlice_LyricBlockptr _t171 = File___fb_children(_t170);
+        LyricBlock* _t172 = _t171.data[0];
+        Sym* _t173 = _t172->name;
+        bool _t174 = (_t173 == NULL);
+        bool _t175 = (!_t174);
+        _sc169 = _t175;
     }
-    if (_sc128) {
-        File* _t135 = lyric_unwrap_class(file);
-        LyricSlice_LyricBlockptr _t136 = File___fb_children(_t135);
-        LyricBlock* _t137 = _t136.data[0];
-        Sym* _t138 = _t137->name;
-        Sym* _t139 = lyric_unwrap_class(_t138);
-        lyric_string _t140 = _t139->name;
-        __ifexpr_123 = _t140;
+    if (_sc169) {
+        File* _t176 = lyric_unwrap_class(file);
+        LyricSlice_LyricBlockptr _t177 = File___fb_children(_t176);
+        LyricBlock* _t178 = _t177.data[0];
+        Sym* _t179 = _t178->name;
+        Sym* _t180 = lyric_unwrap_class(_t179);
+        lyric_string _t181 = _t180->name;
+        __ifexpr_164 = _t181;
     } else {
-        __ifexpr_123 = LYRIC_STR("main");
+        __ifexpr_164 = LYRIC_STR("main");
     }
-    lyric_string pname = __ifexpr_123;
+    lyric_string pname = __ifexpr_164;
     for (int32_t _idx = 0; _idx < classes.len; _idx++) {
         LClassDecl* c = classes.data[_idx];
-        bool _t141 = c->is_permanent;
-        if (_t141) {
-            lyric_string _t142 = c->name;
-            Sym* _t143 = sym(_t142);
-            DictEntry_CSym_bool* _t144 = Dict_CSym_bool_get(owned_classes, _t143);
-            DictEntry_CSym_bool* entry = _t144;
-            bool _t145 = (entry == NULL);
-            bool _t146 = (!_t145);
-            if (_t146) {
-                lyric_string _t147 = c->name;
-                lyric_string _t148 = lyric_sprintf("warning: class '%.*s' is marked permanent but is owned by a relation\n", (int)_t147.len, (const char*)_t147.data);
-                fprintf(stderr, "%.*s", (int)_t148.len, (const char*)_t148.data);
+        bool _t182 = c->is_permanent;
+        if (_t182) {
+            lyric_string _t183 = c->name;
+            Sym* _t184 = sym(_t183);
+            DictEntry_CSym_bool* _t185 = Dict_CSym_bool_get(owned_classes, _t184);
+            DictEntry_CSym_bool* entry = _t185;
+            bool _t186 = (entry == NULL);
+            bool _t187 = (!_t186);
+            if (_t187) {
+                lyric_string _t188 = c->name;
+                lyric_string _t189 = lyric_sprintf("warning: class '%.*s' is marked permanent but is owned by a relation\n", (int)_t188.len, (const char*)_t188.data);
+                fprintf(stderr, "%.*s", (int)_t189.len, (const char*)_t189.data);
             }
         }
     }
-    Dict_CSym_string* _t150 = self->impl_method_renames;
-    LProgram* _t151 = _lyric_slab_alloc_LProgram();
-    _t151->package_name = pname;
-    _t151->imports = imports;
-    _t151->structs = structs;
-    _t151->classes = classes;
-    _t151->enums = enums;
-    _t151->interfaces = ifaces;
-    _t151->functions = functions;
-    _t151->globals = globals;
-    _t151->type_defs = type_defs;
-    _t151->owned_classes = owned_classes;
-    _t151->impl_method_renames = _t150;
-    return _t151;
+    Dict_CSym_string* _t191 = self->impl_method_renames;
+    LProgram* _t192 = _lyric_slab_alloc_LProgram();
+    _t192->package_name = pname;
+    _t192->imports = imports;
+    _t192->structs = structs;
+    _t192->classes = classes;
+    _t192->enums = enums;
+    _t192->interfaces = ifaces;
+    _t192->functions = functions;
+    _t192->globals = globals;
+    _t192->type_defs = type_defs;
+    _t192->owned_classes = owned_classes;
+    _t192->impl_method_renames = _t191;
+    return _t192;
 }
 
 LStructDecl* Lowerer_lower_struct_decl(Lowerer* self, StructDecl* sd) {

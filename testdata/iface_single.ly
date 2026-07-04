@@ -3,7 +3,7 @@ lyric iface_single_test {
     pub func T.to_string(self) -> string
   }
 
-  class Dog implements Printable {
+  class Dog {
     name: string
   }
 
@@ -15,7 +15,7 @@ lyric iface_single_test {
     return self.name
   }
 
-  class Cat implements Printable {
+  class Cat {
     lives: i32
   }
 

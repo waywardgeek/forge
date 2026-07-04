@@ -526,6 +526,43 @@ lyric lowerer {
         }
       }
 
+      // Auto-detect implements from impl blocks for single-param interfaces.
+      // For `impl Printable<Dog>`, add "Printable" to Dog's implements list
+      // so the C backend emits vtable structs and instances.
+      // Only for ≤1 type-param interfaces (erased fat-pointer types).
+      // Multi-param relation interfaces are monomorphized, not erased.
+      for ib in block.ib.children() {
+        if isnull(ib.interface_name) { continue }
+        let iface_name = ib.interface_name!.name
+        let iface_entry = self.lowered_ifaces!.get(sym(iface_name))
+        if isnull(iface_entry) { continue }
+        let iface = iface_entry!.value
+        if len(iface.type_params) > 1 { continue }
+        // Extract concrete class name from impl type args
+        let ib_args = ib.ib_arg.children()
+        let mut k = 0
+        for tp in iface.type_params {
+          if k < len(ib_args) && !isnull(ib_args[k].type_expr) {
+            let lt = self.lower_type(ib_args[k].type_expr!)
+            if !isnull(lt) {
+              let class_name = lt!.name
+              for c in classes {
+                if c.name == class_name {
+                  let mut already = false
+                  for existing in c.implements {
+                    if existing == iface_name { already = true }
+                  }
+                  if !already {
+                    append(c.implements, iface_name)
+                  }
+                }
+              }
+            }
+          }
+          k = k + 1
+        }
+      }
+
       // Type aliases
       for ta in block.ta.children() {
         if !isnull(ta.name) {
