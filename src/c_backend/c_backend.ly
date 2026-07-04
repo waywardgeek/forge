@@ -3481,6 +3481,36 @@ func CGen.emit_switch_stmt(self, s: LStmt?) {
 func CGen.emit_type_switch_stmt(self, s: LStmt?) {
   let d = s!.type_switch!
   let val = self.emit_value(d.value)
+  let val_type = self.resolve_value_type(d.value)
+
+  // Interface type switch: compare vtable pointers via if/else if chain
+  if self.is_iface_type(val_type) {
+    let iface_name = iface_type_name(val_type)
+    let mut first = true
+    let mut i = 0
+    while i < len(d.cases) {
+      let c = d.cases[i]
+      if !isnull(c.typ) {
+        let class_name = c.typ!.name
+        if first {
+          self.line(f"if ({val}._vtable == (const void*)&{class_name}_as_{iface_name}) {{")
+          first = false
+        } else {
+          self.line(f"}} else if ({val}._vtable == (const void*)&{class_name}_as_{iface_name}) {{")
+        }
+      } else {
+        // Wildcard / default case
+        self.line("} else {")
+      }
+      self.indent = self.indent + 1
+      self.emit_stmts(c.body)
+      self.indent = self.indent - 1
+      i = i + 1
+    }
+    self.line("}")
+    return
+  }
+
   self.line(f"switch ({val}.tag) {{")
   let mut i = 0
   while i < len(d.cases) {

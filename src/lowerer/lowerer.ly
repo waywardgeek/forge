@@ -1847,6 +1847,8 @@ lyric lowerer {
     // Determine if this is an enum match
     if !isnull(val_type) && val_type!.kind is TyTaggedUnion {
       self.lower_enum_match(v, val_type!.name, arms)
+    } else if !isnull(val_type) && val_type!.kind is TyInterfaceRef {
+      self.emit_interface_type_switch(v, val_type, arms, "", null)
     } else if self.is_union_match(val_type, arms) {
       self.emit_union_type_switch(v, val_type, arms, "", null)
     } else {
@@ -1890,6 +1892,47 @@ lyric lowerer {
         }
         Ident(name) => {
           let case_type = self.lyric_name_to_ltype(name.name)
+          if result_name != "" {
+            self.lower_arm_body(arm.body, result_name, result_type)
+          } else {
+            self.lower_block(arm.body)
+          }
+          let body = self.stmts
+          self.restore_stmts(saved)
+          append(cases, LTypeSwitchCase { typ: case_type, binding: "", body: body })
+        }
+        _ => {
+          self.restore_stmts(saved)
+        }
+      }
+    }
+    self.emit(LStmt {
+      kind: StTypeSwitch,
+      type_switch: LTypeSwitchData { value: val, cases: cases }
+    })
+  }
+
+  // emit_interface_type_switch emits a StTypeSwitch for interface type matching.
+  // Each arm's Ident pattern names a concrete class; the C backend emits vtable
+  // pointer identity comparisons instead of tag-based switch.
+  func Lowerer.emit_interface_type_switch(self, val: LValue?, val_type: LType?, arms: [MatchArm], result_name: string, result_type: LType?) {
+    let mut cases: [LTypeSwitchCase] = []
+    for arm in arms {
+      if isnull(arm.pattern) { continue }
+      let saved = self.save_stmts()
+      match arm.pattern!.kind {
+        Wildcard => {
+          if result_name != "" {
+            self.lower_arm_body(arm.body, result_name, result_type)
+          } else {
+            self.lower_block(arm.body)
+          }
+          let body = self.stmts
+          self.restore_stmts(saved)
+          append(cases, LTypeSwitchCase { typ: null, binding: "", body: body })
+        }
+        Ident(name) => {
+          let case_type = LType { kind: TyClassHandle, name: name.name, bits: 0, is_exported: false }
           if result_name != "" {
             self.lower_arm_body(arm.body, result_name, result_type)
           } else {
@@ -3528,6 +3571,8 @@ lyric lowerer {
         })
       }
 
+    } else if !isnull(val_type) && val_type!.kind is TyInterfaceRef {
+      self.emit_interface_type_switch(v, val_type, arms, result_name, rt)
     } else if self.is_union_match(val_type, arms) {
       self.emit_union_type_switch(v, val_type, arms, result_name, rt)
     } else {

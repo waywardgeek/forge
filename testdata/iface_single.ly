@@ -31,6 +31,14 @@ lyric iface_single_test {
     return p.to_string()
   }
 
+  func identify(p: Printable) -> string {
+    match p {
+      Dog => { return "dog" }
+      Cat => { return "cat" }
+      _ => { return "unknown" }
+    }
+  }
+
   func main() {
     let d = Dog { name: "Rex" }
     assert_eq(print_it(d), "Rex", "Dog dispatch")
@@ -49,6 +57,10 @@ lyric iface_single_test {
     assert_eq(len(animals), 2)
     assert_eq(animals[0].to_string(), "Rex", "slice element 0 dispatch")
     assert_eq(animals[1].to_string(), "meow x9", "slice element 1 dispatch")
+
+    // Type switch on interface
+    assert_eq(identify(d), "dog", "type switch Dog")
+    assert_eq(identify(c), "cat", "type switch Cat")
   }
 
   func make_printable() -> Printable {
