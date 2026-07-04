@@ -253,7 +253,7 @@ module c_backend
       why: "Emits an LValue as a C expression string. Order of redirection checks matters: in_generator redirects to _gen->name, spawn_captures redirects to (*_ctx->name), mut_params redirects to (*name)."
     method emit_class_msg_data(self, v: LValue?, class_name: string) -> string
       source: c_backend.ly:893
-    method emit_value_as_cstr(self, v: LValue?) -> string
+    method emit_value_as_error(self, v: LValue?) -> string
       source: c_backend.ly:902
     method emit_args(self, args: [LValue?]) -> string
       source: c_backend.ly:948

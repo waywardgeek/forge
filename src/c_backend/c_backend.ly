@@ -413,7 +413,7 @@ func CGen.c_type(self, t: LType?) -> string {
     TyPlatformInt => { return "int" }
     TyPlatformUint => { return "unsigned int" }
     TyUnit => { return "void" }
-    TyError => { return "const char*" }
+    TyError => { return "lyric_string" }
     TyMutex => { return "pthread_mutex_t" }
     TyAny => {
       // Named interface type → boxed struct
@@ -916,19 +916,19 @@ func CGen.emit_class_msg_data(self, v: LValue?, class_name: string) -> string {
   let val = self.emit_value(v)
   if self.prog!.slab_mode_soa {
     let cname = self.resolve_class_name(class_name, "emit_class_msg_data")
-    return f"(const char*)_lyric_slab_{cname}.msg[{val}].data"
+    return f"_lyric_slab_{cname}.msg[{val}]"
   }
-  return f"(const char*){val}->msg.data"
+  return f"{val}->msg"
 }
 
-func CGen.emit_value_as_cstr(self, v: LValue?) -> string {
+func CGen.emit_value_as_error(self, v: LValue?) -> string {
   if isnull(v) {
-    return "\"<null>\""
+    return "LYRIC_STR(\"<null>\")"
   }
   if v!.kind is ValLitString {
-    return f"\"{escape_c(v!.str_val)}\""
+    return f"LYRIC_STR(\"{escape_c(v!.str_val)}\")"
   }
-  // For error types, use directly
+  // For error types, use directly (already lyric_string)
   if v!.kind is ValTemp {
     let ty_entry = self.temp_types!.get(sym(f"{v!.temp_id}"))
     if !isnull(ty_entry) && !isnull(ty_entry!.value) {
@@ -964,7 +964,8 @@ func CGen.emit_value_as_cstr(self, v: LValue?) -> string {
       }
     }
   }
-  return f"(const char*){self.emit_value(v)}.data"
+  // Default: value is a lyric_string already
+  return self.emit_value(v)
 }
 
 func CGen.emit_args(self, args: [LValue?]) -> string {
@@ -1222,7 +1223,7 @@ func CGen.printf_spec_and_arg(self, v: LValue?) -> (string, string) {
     TyF32 | TyF64 => { return ("%g", val) }
     TyBool => { return ("%s", f"lyric_bool_str({val})") }
     TyString => { return ("%.*s", f"(int){val}.len, (const char*){val}.data") }
-    TyError => { return ("%s", val) }
+    TyError => { return ("%.*s", f"(int){val}.len, (const char*){val}.data") }
     TyTaggedUnion => {
       let to_str = f"{t!.name}_to_string({val})"
       return ("%.*s", f"(int){to_str}.len, (const char*){to_str}.data")
@@ -1447,7 +1448,10 @@ func CGen.emit_builtin(self, d: LBuiltinData?) -> string {
           && !isnull(arg_type!.elem) && arg_type!.elem!.kind is TyClassHandle
         )
         let is_error = arg_type!.kind is TyError
-        if is_class || is_any || is_opt_class || is_error {
+        if is_error {
+          return f"lyric_error_is_null({self.emit_value(args[0])})"
+        }
+        if is_class || is_any || is_opt_class {
           if self.prog!.slab_mode_soa && (is_class || is_opt_class) {
             return f"({self.emit_value(args[0])} == 0)"
           }
@@ -1830,9 +1834,9 @@ func CGen.emit_builtin(self, d: LBuiltinData?) -> string {
   }
   if name == "new_error" {
     if len(args) > 0 {
-      return f"lyric_new_error({self.emit_value(args[0])})"
+      return self.emit_value(args[0])
     }
-    return "lyric_new_error(LYRIC_STR_EMPTY)"
+    return "LYRIC_STR_EMPTY"
   }
   if name == "new_dict" {
     return "/* new_dict */"
@@ -1914,9 +1918,9 @@ func CGen.emit_expr_str(self, e: LExpr?) -> string {
     }
     ExCast => {
       let d = e!.cast!
-      // Special case: cast to error (const char*) — use emit_value_as_cstr
+      // Special case: cast to error (lyric_string) — use emit_value_as_error
       if !isnull(d.target) && d.target!.kind is TyError {
-        return self.emit_value_as_cstr(d.operand)
+        return self.emit_value_as_error(d.operand)
       }
       return f"(({self.c_type(d.target)}){self.emit_value(d.operand)})"
     }
@@ -1991,7 +1995,10 @@ func CGen.emit_expr_str(self, e: LExpr?) -> string {
           && !isnull(val_type!.elem) && val_type!.elem!.kind is TyClassHandle
         )
         let is_error = val_type!.kind is TyError
-        if is_class || is_any || is_opt_class || is_error {
+        if is_error {
+          return f"lyric_error_is_null({self.emit_value(d.value)})"
+        }
+        if is_class || is_any || is_opt_class {
           if self.prog!.slab_mode_soa && (is_class || is_opt_class) {
             return f"({self.emit_value(d.value)} == 0)"
           }
@@ -2051,7 +2058,7 @@ func CGen.emit_expr_str(self, e: LExpr?) -> string {
         }
         return f"lyric_ok({self.emit_value(d.value)}, {result_name})"
       }
-      return f"lyric_err({self.emit_value_as_cstr(d.err)}, {result_name})"
+      return f"lyric_err({self.emit_value_as_error(d.err)}, {result_name})"
     }
     ExMakeSlice => {
       let slice_type = self.slice_type_name_from_type(e!.typ)
@@ -2173,7 +2180,7 @@ func CGen.emit_call_expr(self, e: LExpr?) -> string {
   }
   if name == "fmt.Errorf" || name == "errors.New" {
     if len(d.args) > 0 {
-      return self.emit_value_as_cstr(d.args[0])
+      return self.emit_value_as_error(d.args[0])
     }
   }
   if name == "fmt.Print" {
@@ -2226,9 +2233,9 @@ func CGen.emit_call_expr(self, e: LExpr?) -> string {
   }
   if name == "new_error" {
     if len(d.args) > 0 {
-      return f"lyric_new_error({self.emit_value(d.args[0])})"
+      return self.emit_value(d.args[0])
     }
-    return "lyric_new_error(LYRIC_STR_EMPTY)"
+    return "LYRIC_STR_EMPTY"
   }
   let args_str = self.emit_args_boxed_mut(d.func_name, d.args, d.mut_args)
   return f"{name}({args_str})"
@@ -2411,7 +2418,7 @@ func CGen.emit_bin_op_expr(self, e: LExpr?) -> string {
       return f"lyric_slice_concat({left}, {right}, {slice_type})"
     }
   }
-  // Optional null comparison
+  // Optional / error null comparison
   if (d.op is BinEq || d.op is BinNe) && (!isnull(d.right) && d.right!.kind is ValLitNull || !isnull(d.left) && d.left!.kind is ValLitNull) {
     let mut opt_val = left
     let mut opt_type: LType? = null
@@ -2420,6 +2427,13 @@ func CGen.emit_bin_op_expr(self, e: LExpr?) -> string {
     } else {
       opt_val = right
       opt_type = self.resolve_value_type(d.right)
+    }
+    // Error null check: err == null → lyric_error_is_null(err)
+    if !isnull(opt_type) && opt_type!.kind is TyError {
+      if d.op is BinNe {
+        return f"(!lyric_error_is_null({opt_val}))"
+      }
+      return f"lyric_error_is_null({opt_val})"
     }
     if !isnull(opt_type) && opt_type!.kind is TyOptional && !self.is_class_optional(opt_type) {
       if d.op is BinNe {
@@ -2693,7 +2707,7 @@ func CGen.emit_multi_assign(self, names: [string], types: [LType?], expr: LExpr?
       self.var_types!.set(sym(names[0]), elem_type)
     }
     if names[1] != "_" {
-      self.line(f"const char* {names[1]} = {tmp_name}.error;")
+      self.line(f"lyric_string {names[1]} = {tmp_name}.error;")
       self.var_types!.set(sym(names[1]), LType { kind: TyError, name: "", elem: null, key: null, fields: [], params: [], ret: null, variants: [], type_args: [], bits: 0, is_exported: false })
     }
   } else if len(names) == 2 && !isnull(expr) && !isnull(expr!.typ) && expr!.typ!.kind is TyTuple {
@@ -3354,7 +3368,7 @@ func CGen.emit_return_stmt(self, s: LStmt?) {
         self.line(f"return lyric_ok({val_str}, {result_name});")
       }
     } else {
-      self.line(f"return lyric_err({self.emit_value_as_cstr(d.values[1])}, {result_name});")
+      self.line(f"return lyric_err({self.emit_value_as_error(d.values[1])}, {result_name});")
     }
     return
   }

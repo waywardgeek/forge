@@ -184,18 +184,6 @@ static inline lyric_string lyric_str_from_bytes(const void* data, int32_t len) {
     return (lyric_string){.data = buf, .len = len, .cap = len};
 }
 
-/* new_error(msg): lower a lyric string to a NUL-terminated const char* for
- * the error C ABI. Heap-allocates a fresh NUL-terminated copy so callers can
- * pass dynamic / non-literal strings safely. */
-static inline const char* lyric_new_error(lyric_string msg) {
-    if (msg.len == 0) return "";
-    char* buf = (char*)malloc((size_t)msg.len + 1);
-    if (!buf) return "";
-    memcpy(buf, msg.data, (size_t)msg.len);
-    buf[msg.len] = '\0';
-    return buf;
-}
-
 /* Equality (length-aware, handles embedded \0) */
 static inline bool lyric_str_eq(lyric_string a, lyric_string b) {
     if (a.len != b.len) return false;
@@ -442,18 +430,21 @@ static inline lyric_string lyric_str_trim(lyric_string s) {
 })
 
 /* -------------------------------------------------------------------------
- * Error Results  —  {bool is_err; T value; const char* error}
+ * Error Results  —  {bool is_err; T value; lyric_string error}
  * -------------------------------------------------------------------------
- * Error messages remain const char* (C string literals).
- * This is intentional — error messages come from lyric_err("msg") literals.
+ * Error messages are lyric_string (length-prefixed byte slices).
+ * A null error has .data == NULL && .len == 0.
  */
 
 #define LYRIC_RESULT_DEF(ElemType, ResultName) \
-    typedef struct { bool is_err; ElemType value; const char* error; } ResultName;
+    typedef struct { bool is_err; ElemType value; lyric_string error; } ResultName;
 
-#define lyric_ok(val, ResultName) ((ResultName){.is_err = false, .value = (val), .error = NULL})
+#define lyric_ok(val, ResultName) ((ResultName){.is_err = false, .value = (val), .error = LYRIC_STR_EMPTY})
 #define lyric_err(msg, ResultName) ((ResultName){.is_err = true, .error = (msg)})
 #define lyric_is_err(r) ((r).is_err)
+
+/* Check if an error value is null (no error) */
+#define lyric_error_is_null(e) ((e).data == NULL)
 
 /* -------------------------------------------------------------------------
  * Channels (pthreads-based, buffered and unbuffered)
