@@ -3317,6 +3317,15 @@ func CGen.emit_return_stmt(self, s: LStmt?) {
       }
       return
     }
+    // Box concrete class into interface fat pointer on return
+    if !isnull(self.current_func) && self.is_iface_type(self.current_func!.return_type) {
+      let iname = iface_type_name(self.current_func!.return_type)
+      let val_type = self.resolve_value_type(d.values[0])
+      if !isnull(val_type) && val_type!.kind is TyClassHandle {
+        self.line(f"return ({iname}){{._data = {val}, ._vtable = &{val_type!.name}_as_{iname}}};")
+        return
+      }
+    }
     self.line(f"return {val};")
     return
   }
