@@ -13361,6 +13361,7 @@ void Lowerer_emit_variant_bindings(Lowerer self, LValue val, lyric_string enum_n
 void Lowerer_lower_match(Lowerer self, Expr value, LyricSlice_MatchArm arms);
 bool Lowerer_is_union_match(Lowerer self, LType val_type, LyricSlice_MatchArm arms);
 void Lowerer_emit_union_type_switch(Lowerer self, LValue val, LType val_type, LyricSlice_MatchArm arms, lyric_string result_name, LType result_type);
+void Lowerer_emit_interface_type_switch(Lowerer self, LValue val, LType val_type, LyricSlice_MatchArm arms, lyric_string result_name, LType result_type);
 LType Lowerer_lyric_name_to_ltype(Lowerer self, lyric_string name);
 void Lowerer_lower_enum_match(Lowerer self, LValue val, lyric_string enum_name, LyricSlice_MatchArm arms);
 bool Lowerer_has_nested_variant_patterns(Lowerer self, LyricSlice_MatchArm arms);
@@ -56351,11 +56352,26 @@ void Lowerer_lower_match(Lowerer self, Expr value, LyricSlice_MatchArm arms) {
         lyric_string _t10 = _lyric_slab_LType.name[_t9];
         Lowerer_lower_enum_match(self, v, _t10, arms);
     } else {
-        bool _t12 = Lowerer_is_union_match(self, val_type, arms);
-        if (_t12) {
-            Lowerer_emit_union_type_switch(self, v, val_type, arms, LYRIC_STR(""), 0);
+        bool _t12 = (val_type == 0);
+        bool _t13 = (!_t12);
+        bool _sc14 = false;
+        _sc14 = _t13;
+        if (_sc14) {
+            LType _t15 = lyric_unwrap_class(val_type);
+            LTypeKind _t16 = _lyric_slab_LType.kind[_t15];
+            int32_t _t17 = _t16;
+            bool _t18 = (_t17 == 31);
+            _sc14 = _t18;
+        }
+        if (_sc14) {
+            Lowerer_emit_interface_type_switch(self, v, val_type, arms, LYRIC_STR(""), 0);
         } else {
-            Lowerer_lower_match_as_if_else(self, v, val_type, arms, LYRIC_STR(""), 0);
+            bool _t20 = Lowerer_is_union_match(self, val_type, arms);
+            if (_t20) {
+                Lowerer_emit_union_type_switch(self, v, val_type, arms, LYRIC_STR(""), 0);
+            } else {
+                Lowerer_lower_match_as_if_else(self, v, val_type, arms, LYRIC_STR(""), 0);
+            }
         }
     }
 }
@@ -56469,6 +56485,79 @@ void Lowerer_emit_union_type_switch(Lowerer self, LValue val, LType val_type, Ly
     _lyric_slab_LStmt.kind[_t32] = _t30;
     _lyric_slab_LStmt.type_switch[_t32] = lyric_some(_t31, LyricOpt_LTypeSwitchData);
     Lowerer_emit(self, _t32);
+}
+
+void Lowerer_emit_interface_type_switch(Lowerer self, LValue val, LType val_type, LyricSlice_MatchArm arms, lyric_string result_name, LType result_type) {
+    LyricSlice_LTypeSwitchCase _t0 = lyric_slice_empty(LyricSlice_LTypeSwitchCase);
+    LyricSlice_LTypeSwitchCase cases = _t0;
+    for (int32_t _idx = 0; _idx < arms.len; _idx++) {
+        MatchArm arm = arms.data[_idx];
+        Pattern _t1 = _lyric_slab_MatchArm.pattern[arm];
+        bool _t2 = (_t1 == 0);
+        if (_t2) {
+            continue;
+        }
+        LyricSlice_LStmt _t3 = Lowerer_save_stmts(self);
+        LyricSlice_LStmt saved = _t3;
+        Pattern _t4 = _lyric_slab_MatchArm.pattern[arm];
+        Pattern _t5 = lyric_unwrap_class(_t4);
+        PatternKind _t6 = _lyric_slab_Pattern.kind[_t5];
+        int32_t _t7 = _t6.tag;
+        switch (_t7) {
+        case 3: {
+            bool _t8 = (!lyric_str_eq(result_name, LYRIC_STR("")));
+            if (_t8) {
+                Block _t9 = _lyric_slab_MatchArm.body[arm];
+                Lowerer_lower_arm_body(self, _t9, result_name, result_type);
+            } else {
+                Block _t11 = _lyric_slab_MatchArm.body[arm];
+                Lowerer_lower_block(self, _t11);
+            }
+            LyricSlice_LStmt _t13 = _lyric_slab_Lowerer.stmts[self];
+            LyricSlice_LStmt body = _t13;
+            Lowerer_restore_stmts(self, saved);
+            LTypeSwitchCase _t15 = (LTypeSwitchCase){.typ = 0, .binding = LYRIC_STR(""), .body = body};
+            lyric_push(&cases, _t15, LyricSlice_LTypeSwitchCase);
+            break;
+        }
+        case 0: {
+            Sym _t17 = _t6.data.ident.name;
+            Sym name = _t17;
+            LTypeKind _t18 = LTypeKind_TyClassHandle;
+            lyric_string _t19 = _lyric_slab_Sym.name[name];
+            LType _t20 = _lyric_slab_alloc_LType();
+            _lyric_slab_LType.kind[_t20] = _t18;
+            _lyric_slab_LType.name[_t20] = _t19;
+            _lyric_slab_LType.bits[_t20] = 0;
+            _lyric_slab_LType.is_exported[_t20] = false;
+            LType case_type = _t20;
+            bool _t21 = (!lyric_str_eq(result_name, LYRIC_STR("")));
+            if (_t21) {
+                Block _t22 = _lyric_slab_MatchArm.body[arm];
+                Lowerer_lower_arm_body(self, _t22, result_name, result_type);
+            } else {
+                Block _t24 = _lyric_slab_MatchArm.body[arm];
+                Lowerer_lower_block(self, _t24);
+            }
+            LyricSlice_LStmt _t26 = _lyric_slab_Lowerer.stmts[self];
+            LyricSlice_LStmt body = _t26;
+            Lowerer_restore_stmts(self, saved);
+            LTypeSwitchCase _t28 = (LTypeSwitchCase){.typ = case_type, .binding = LYRIC_STR(""), .body = body};
+            lyric_push(&cases, _t28, LyricSlice_LTypeSwitchCase);
+            break;
+        }
+        default: {
+            Lowerer_restore_stmts(self, saved);
+            break;
+        }
+        }
+    }
+    LStmtKind _t31 = LStmtKind_StTypeSwitch;
+    LTypeSwitchData _t32 = (LTypeSwitchData){.value = val, .cases = cases};
+    LStmt _t33 = _lyric_slab_alloc_LStmt();
+    _lyric_slab_LStmt.kind[_t33] = _t31;
+    _lyric_slab_LStmt.type_switch[_t33] = lyric_some(_t32, LyricOpt_LTypeSwitchData);
+    Lowerer_emit(self, _t33);
 }
 
 LType Lowerer_lyric_name_to_ltype(Lowerer self, lyric_string name) {
@@ -60835,15 +60924,30 @@ LValue Lowerer_lower_match_expr(Lowerer self, Expr orig, Expr value, LyricSlice_
             Lowerer_emit(self, _t94);
         }
     } else {
-        bool _t96 = Lowerer_is_union_match(self, val_type, arms);
-        if (_t96) {
-            Lowerer_emit_union_type_switch(self, v, val_type, arms, result_name, rt);
+        bool _t96 = (val_type == 0);
+        bool _t97 = (!_t96);
+        bool _sc98 = false;
+        _sc98 = _t97;
+        if (_sc98) {
+            LType _t99 = lyric_unwrap_class(val_type);
+            LTypeKind _t100 = _lyric_slab_LType.kind[_t99];
+            int32_t _t101 = _t100;
+            bool _t102 = (_t101 == 31);
+            _sc98 = _t102;
+        }
+        if (_sc98) {
+            Lowerer_emit_interface_type_switch(self, v, val_type, arms, result_name, rt);
         } else {
-            Lowerer_lower_match_as_if_else(self, v, val_type, arms, result_name, rt);
+            bool _t104 = Lowerer_is_union_match(self, val_type, arms);
+            if (_t104) {
+                Lowerer_emit_union_type_switch(self, v, val_type, arms, result_name, rt);
+            } else {
+                Lowerer_lower_match_as_if_else(self, v, val_type, arms, result_name, rt);
+            }
         }
     }
-    LValue _t99 = make_var_val(result_name, rt);
-    return _t99;
+    LValue _t107 = make_var_val(result_name, rt);
+    return _t107;
 }
 
 LValue Lowerer_lower_cast(Lowerer self, Expr orig, TypeExpr target_type, Expr operand) {
@@ -95133,71 +95237,121 @@ void CGen_emit_type_switch_stmt(CGen self, LStmt s) {
     LValue _t3 = d.value;
     lyric_string _t4 = CGen_emit_value(self, _t3);
     lyric_string val = _t4;
-    lyric_string _t5 = lyric_sprintf("switch (%.*s.tag) {", (int)val.len, (const char*)val.data);
-    CGen_line(self, _t5);
+    LValue _t5 = d.value;
+    LType _t6 = CGen_resolve_value_type(self, _t5);
+    LType val_type = _t6;
+    bool _t7 = CGen_is_iface_type(self, val_type);
+    if (_t7) {
+        lyric_string _t8 = iface_type_name(val_type);
+        lyric_string iface_name = _t8;
+        bool first = true;
+        int32_t i = 0;
+        while (1) {
+            LyricSlice_LTypeSwitchCase _t9 = d.cases;
+            int32_t _t10 = _t9.len;
+            bool _t11 = (i < _t10);
+            if (!(_t11)) break;
+            LyricSlice_LTypeSwitchCase _t12 = d.cases;
+            LTypeSwitchCase _t13 = _t12.data[i];
+            LTypeSwitchCase c = _t13;
+            LType _t14 = c.typ;
+            bool _t15 = (_t14 == 0);
+            bool _t16 = (!_t15);
+            if (_t16) {
+                LType _t17 = c.typ;
+                LType _t18 = lyric_unwrap_class(_t17);
+                lyric_string _t19 = _lyric_slab_LType.name[_t18];
+                lyric_string class_name = _t19;
+                if (first) {
+                    lyric_string _t20 = lyric_sprintf("if (%.*s._vtable == (const void*)&%.*s_as_%.*s) {", (int)val.len, (const char*)val.data, (int)class_name.len, (const char*)class_name.data, (int)iface_name.len, (const char*)iface_name.data);
+                    CGen_line(self, _t20);
+                    first = false;
+                } else {
+                    lyric_string _t22 = lyric_sprintf("} else if (%.*s._vtable == (const void*)&%.*s_as_%.*s) {", (int)val.len, (const char*)val.data, (int)class_name.len, (const char*)class_name.data, (int)iface_name.len, (const char*)iface_name.data);
+                    CGen_line(self, _t22);
+                }
+            } else {
+                CGen_line(self, LYRIC_STR("} else {"));
+            }
+            int32_t _t25 = _lyric_slab_CGen.indent[self];
+            int32_t _t26 = (_t25 + 1);
+            _lyric_slab_CGen.indent[self] = _t26;
+            LyricSlice_LStmt _t27 = c.body;
+            CGen_emit_stmts(self, _t27);
+            int32_t _t29 = _lyric_slab_CGen.indent[self];
+            int32_t _t30 = (_t29 - 1);
+            _lyric_slab_CGen.indent[self] = _t30;
+            int32_t _t31 = (i + 1);
+            i = _t31;
+        }
+        CGen_line(self, LYRIC_STR("}"));
+        return;
+    }
+    lyric_string _t33 = lyric_sprintf("switch (%.*s.tag) {", (int)val.len, (const char*)val.data);
+    CGen_line(self, _t33);
     int32_t i = 0;
     while (1) {
-        LyricSlice_LTypeSwitchCase _t7 = d.cases;
-        int32_t _t8 = _t7.len;
-        bool _t9 = (i < _t8);
-        if (!(_t9)) break;
-        LyricSlice_LTypeSwitchCase _t10 = d.cases;
-        LTypeSwitchCase _t11 = _t10.data[i];
-        LTypeSwitchCase c = _t11;
-        LType _t12 = c.typ;
-        bool _t13 = (_t12 == 0);
-        bool _t14 = (!_t13);
-        if (_t14) {
-            LValue _t15 = d.value;
-            LType _t16 = CGen_resolve_value_type(self, _t15);
-            LType val_type = _t16;
-            bool _t17 = (val_type == 0);
-            bool _t18 = (!_t17);
-            bool _sc19 = false;
-            _sc19 = _t18;
-            if (_sc19) {
-                LType _t20 = lyric_unwrap_class(val_type);
-                LTypeKind _t21 = _lyric_slab_LType.kind[_t20];
-                int32_t _t22 = _t21;
-                bool _t23 = (_t22 == 30);
-                _sc19 = _t23;
+        LyricSlice_LTypeSwitchCase _t35 = d.cases;
+        int32_t _t36 = _t35.len;
+        bool _t37 = (i < _t36);
+        if (!(_t37)) break;
+        LyricSlice_LTypeSwitchCase _t38 = d.cases;
+        LTypeSwitchCase _t39 = _t38.data[i];
+        LTypeSwitchCase c = _t39;
+        LType _t40 = c.typ;
+        bool _t41 = (_t40 == 0);
+        bool _t42 = (!_t41);
+        if (_t42) {
+            LValue _t43 = d.value;
+            LType _t44 = CGen_resolve_value_type(self, _t43);
+            LType val_type = _t44;
+            bool _t45 = (val_type == 0);
+            bool _t46 = (!_t45);
+            bool _sc47 = false;
+            _sc47 = _t46;
+            if (_sc47) {
+                LType _t48 = lyric_unwrap_class(val_type);
+                LTypeKind _t49 = _lyric_slab_LType.kind[_t48];
+                int32_t _t50 = _t49;
+                bool _t51 = (_t50 == 30);
+                _sc47 = _t51;
             }
-            if (_sc19) {
-                LType _t24 = c.typ;
-                lyric_string _t25 = CGen_union_tag_for_type(self, _t24);
-                lyric_string _t26 = lyric_sprintf("case %.*s: {", (int)_t25.len, (const char*)_t25.data);
-                CGen_line(self, _t26);
+            if (_sc47) {
+                LType _t52 = c.typ;
+                lyric_string _t53 = CGen_union_tag_for_type(self, _t52);
+                lyric_string _t54 = lyric_sprintf("case %.*s: {", (int)_t53.len, (const char*)_t53.data);
+                CGen_line(self, _t54);
             } else {
-                LType _t28 = c.typ;
-                lyric_string _t29 = CGen_resolve_tag_constant(self, d, _t28);
-                lyric_string tag_const = _t29;
-                bool _t30 = (!lyric_str_eq(tag_const, LYRIC_STR("")));
-                if (_t30) {
-                    lyric_string _t31 = lyric_sprintf("case %.*s: {", (int)tag_const.len, (const char*)tag_const.data);
-                    CGen_line(self, _t31);
+                LType _t56 = c.typ;
+                lyric_string _t57 = CGen_resolve_tag_constant(self, d, _t56);
+                lyric_string tag_const = _t57;
+                bool _t58 = (!lyric_str_eq(tag_const, LYRIC_STR("")));
+                if (_t58) {
+                    lyric_string _t59 = lyric_sprintf("case %.*s: {", (int)tag_const.len, (const char*)tag_const.data);
+                    CGen_line(self, _t59);
                 } else {
-                    LType _t33 = c.typ;
-                    lyric_string _t34 = CGen_c_type(self, _t33);
-                    lyric_string _t35 = lyric_sprintf("case /* %.*s */0: {", (int)_t34.len, (const char*)_t34.data);
-                    CGen_line(self, _t35);
+                    LType _t61 = c.typ;
+                    lyric_string _t62 = CGen_c_type(self, _t61);
+                    lyric_string _t63 = lyric_sprintf("case /* %.*s */0: {", (int)_t62.len, (const char*)_t62.data);
+                    CGen_line(self, _t63);
                 }
             }
         } else {
-            lyric_string _t37 = LYRIC_STR("default: {");
-            CGen_line(self, _t37);
+            lyric_string _t65 = LYRIC_STR("default: {");
+            CGen_line(self, _t65);
         }
-        int32_t _t39 = _lyric_slab_CGen.indent[self];
-        int32_t _t40 = (_t39 + 1);
-        _lyric_slab_CGen.indent[self] = _t40;
-        LyricSlice_LStmt _t41 = c.body;
-        CGen_emit_stmts(self, _t41);
+        int32_t _t67 = _lyric_slab_CGen.indent[self];
+        int32_t _t68 = (_t67 + 1);
+        _lyric_slab_CGen.indent[self] = _t68;
+        LyricSlice_LStmt _t69 = c.body;
+        CGen_emit_stmts(self, _t69);
         CGen_line(self, LYRIC_STR("break;"));
-        int32_t _t44 = _lyric_slab_CGen.indent[self];
-        int32_t _t45 = (_t44 - 1);
-        _lyric_slab_CGen.indent[self] = _t45;
+        int32_t _t72 = _lyric_slab_CGen.indent[self];
+        int32_t _t73 = (_t72 - 1);
+        _lyric_slab_CGen.indent[self] = _t73;
         CGen_line(self, LYRIC_STR("}"));
-        int32_t _t47 = (i + 1);
-        i = _t47;
+        int32_t _t75 = (i + 1);
+        i = _t75;
     }
     CGen_line(self, LYRIC_STR("}"));
 }
