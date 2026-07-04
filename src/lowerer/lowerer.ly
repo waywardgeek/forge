@@ -264,6 +264,20 @@ lyric lowerer {
         }
         return LType { kind: TyUnion, name: "", params: ltypes, bits: 0, is_exported: false }
       }
+      QualifiedType(base, member) => {
+        // X.Y in type position — check if X is an interface
+        let base_name = base.name
+        if self.interfaces!.has(sym(base_name)) {
+          return LType { kind: TyInterfaceRef, name: base_name, member_name: member.name, bits: 0, is_exported: false }
+        }
+        // Fallback: treat as dotted name
+        let dotted = base_name + "." + member.name
+        return self.lower_named_type(sym(dotted), [])
+      }
+      InterfaceType(iface_name, member_name, brand) => {
+        let n = iface_name.name
+        return LType { kind: TyInterfaceRef, name: n, bits: 0, is_exported: false }
+      }
     }
   }
 
@@ -305,6 +319,15 @@ lyric lowerer {
       return LType { kind: TyTaggedUnion, name: n, bits: 0, is_exported: false }
     }
     if self.interfaces!.has(sym(n)) {
+      // Single-param interfaces → erased fat pointers (TyInterfaceRef).
+      // Multi-param interfaces (relations) → monomorphized, stay TyAny.
+      let iface_entry = self.interfaces!.get(sym(n))
+      if !isnull(iface_entry) {
+        let itp = iface_entry!.value.itp.children()
+        if len(itp) <= 1 {
+          return LType { kind: TyInterfaceRef, name: n, bits: 0, is_exported: false }
+        }
+      }
       return LType { kind: TyAny, name: n, bits: 0, is_exported: false }
     }
     if self.type_aliases!.has(sym(n)) {

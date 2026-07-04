@@ -374,6 +374,25 @@ func c_un_op(op: LUnOpKind) -> string {
 // Type mapping
 // ---------------------------------------------------------------------------
 
+// is_iface_type: returns true if this LType represents a single-param
+// interface (fat pointer). Handles both TyInterfaceRef (new) and the
+// legacy TyAny-with-interface-name path.
+func CGen.is_iface_type(self, t: LType?) -> bool {
+  if isnull(t) { return false }
+  if t!.kind is TyInterfaceRef { return true }
+  if t!.kind is TyAny && t!.name != "" {
+    return !isnull(self.iface_by_name!.get(sym(t!.name)))
+  }
+  return false
+}
+
+// iface_type_name: returns the interface name from an LType that
+// is_iface_type returned true for.
+func iface_type_name(t: LType?) -> string {
+  if isnull(t) { return "" }
+  return t!.name
+}
+
 func CGen.c_type(self, t: LType?) -> string {
   if isnull(t) {
     return "void"
@@ -405,6 +424,9 @@ func CGen.c_type(self, t: LType?) -> string {
         }
       }
       return "void*"
+    }
+    TyInterfaceRef => {
+      return t!.name
     }
     TyUnion => { return "LyricUnion" }
     TySlice => {
@@ -2209,14 +2231,11 @@ func CGen.emit_method_call_expr(self, e: LExpr?) -> string {
 
   // Check for interface vtable dispatch
   let recv_type = self.resolve_value_type(d.receiver)
-  if !isnull(recv_type) && recv_type!.kind is TyAny && recv_type!.name != "" {
-    let iface_entry = self.iface_by_name!.get(sym(recv_type!.name))
-    if !isnull(iface_entry) {
-      if args_str != "" {
-        return f"{recv}._vtable->{d.method}({recv}._data, {args_str})"
-      }
-      return f"{recv}._vtable->{d.method}({recv}._data)"
+  if self.is_iface_type(recv_type) {
+    if args_str != "" {
+      return f"{recv}._vtable->{d.method}({recv}._data, {args_str})"
     }
+    return f"{recv}._vtable->{d.method}({recv}._data)"
   }
 
   // Resolve class name
@@ -2521,17 +2540,15 @@ func CGen.emit_args_boxed(self, func_name: string, args: [LValue?]) -> string {
         if !isnull(arg_type) && !(arg_type!.kind is TyUnion) {
           arg_str = self.c_wrap_union(arg_str, arg_type)
         }
-      } else if !isnull(pt) && pt!.kind is TyAny && pt!.name != "" {
-        let iface_e = self.iface_by_name!.get(sym(pt!.name))
-        if !isnull(iface_e) {
+      } else if self.is_iface_type(pt) {
           let concrete_class = self.resolve_concrete_class(args[i])
           if concrete_class != "" {
+            let iname = iface_type_name(pt)
             let data_val = if self.prog!.slab_mode_soa { f"(void*)(uintptr_t){arg_str}" } else { arg_str }
-            arg_str = f"({pt!.name}){{._data = {data_val}, ._vtable = &{concrete_class}_as_{pt!.name}}}"
+            arg_str = f"({iname}){{._data = {data_val}, ._vtable = &{concrete_class}_as_{iname}}}"
           }
 
         }
-      }
     }
     sb.write(arg_str)
     i = i + 1
@@ -2559,16 +2576,13 @@ func CGen.emit_args_boxed_mut(self, func_name: string, args: [LValue?], mut_args
         if !isnull(arg_type) && !(arg_type!.kind is TyUnion) {
           arg_str = self.c_wrap_union(arg_str, arg_type)
         }
-      } else if !isnull(pt) && pt!.kind is TyAny && pt!.name != "" {
-        let iface_e = self.iface_by_name!.get(sym(pt!.name))
-        if !isnull(iface_e) {
-          let concrete_class = self.resolve_concrete_class(args[i])
-          if concrete_class != "" {
-            let data_val = if self.prog!.slab_mode_soa { f"(void*)(uintptr_t){arg_str}" } else { arg_str }
-            arg_str = f"({pt!.name}){{._data = {data_val}, ._vtable = &{concrete_class}_as_{pt!.name}}}"
-          }
+      } else if self.is_iface_type(pt) {
+        let concrete_class = self.resolve_concrete_class(args[i])
+        if concrete_class != "" {
+          let iname = iface_type_name(pt)
+          let data_val = if self.prog!.slab_mode_soa { f"(void*)(uintptr_t){arg_str}" } else { arg_str }
+          arg_str = f"({iname}){{._data = {data_val}, ._vtable = &{concrete_class}_as_{iname}}}"
         }
-
       }
     }
     sb.write(arg_str)
@@ -2818,10 +2832,8 @@ func CGen.emit_stmt(self, s: LStmt?) {
         )
         // Don't resolve named interface types — keep the interface type
         // so the variable is Printable, not Dog*
-        if should_resolve && !isnull(var_type) && var_type!.kind is TyAny && var_type!.name != "" {
-          if !isnull(self.iface_by_name!.get(sym(var_type!.name))) {
-            should_resolve = false
-          }
+        if should_resolve && self.is_iface_type(var_type) {
+          should_resolve = false
         }
         if should_resolve {
           let resolved = self.resolve_value_type(d.init)
@@ -2852,13 +2864,11 @@ func CGen.emit_stmt(self, s: LStmt?) {
           }
         }
         // Box concrete class into interface fat pointer
-        if !isnull(var_type) && var_type!.kind is TyAny && var_type!.name != "" {
-          let iface_entry = self.iface_by_name!.get(sym(var_type!.name))
-          if !isnull(iface_entry) && len(iface_entry!.value.type_params) <= 1 {
-            let src_type = self.infer_lval_type(d.init)
-            if !isnull(src_type) && src_type!.kind is TyClassHandle {
-              init_str = f"({var_type!.name}){{._data = {init_str}, ._vtable = &{src_type!.name}_as_{var_type!.name}}}"
-            }
+        if self.is_iface_type(var_type) {
+          let iname = iface_type_name(var_type)
+          let src_type = self.infer_lval_type(d.init)
+          if !isnull(src_type) && src_type!.kind is TyClassHandle {
+            init_str = f"({iname}){{._data = {init_str}, ._vtable = &{src_type!.name}_as_{iname}}}"
           }
         }
         self.line(f"{self.c_field_decl(var_type, name)} = {init_str};")
