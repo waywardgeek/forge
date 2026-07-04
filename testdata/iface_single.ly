@@ -43,6 +43,12 @@ lyric iface_single_test {
 
     // Return boxing
     assert_eq(make_printable().to_string(), "Rex", "return boxing")
+
+    // Heterogeneous slices
+    let animals: [Printable] = [d, c]
+    assert_eq(len(animals), 2)
+    assert_eq(animals[0].to_string(), "Rex", "slice element 0 dispatch")
+    assert_eq(animals[1].to_string(), "meow x9", "slice element 1 dispatch")
   }
 
   func make_printable() -> Printable {

@@ -2061,12 +2061,22 @@ func CGen.emit_expr_str(self, e: LExpr?) -> string {
       }
       // Non-empty slice literal
       let elem_type = if !isnull(e!.typ) && !isnull(e!.typ!.elem) { self.c_type(e!.typ!.elem) } else { "void*" }
+      let elem_is_iface = self.is_iface_type(e!.typ!.elem)
+      let iname = if elem_is_iface { iface_type_name(e!.typ!.elem) } else { "" }
       let sb = new_string_builder()
       sb.write(f"lyric_slice_lit({slice_type}, {elem_type}, ")
       let mut i = 0
       while i < len(d.args) {
         if i > 0 { sb.write(", ") }
-        sb.write(self.emit_value(d.args[i]))
+        let mut arg_str = self.emit_value(d.args[i])
+        // Box concrete elements into interface fat pointers
+        if elem_is_iface {
+          let concrete_class = self.resolve_concrete_class(d.args[i])
+          if concrete_class != "" {
+            arg_str = f"({iname}){{._data = {arg_str}, ._vtable = &{concrete_class}_as_{iname}}}"
+          }
+        }
+        sb.write(arg_str)
         i = i + 1
       }
       sb.write(")")

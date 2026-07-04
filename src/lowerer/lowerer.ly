@@ -1325,14 +1325,14 @@ lyric lowerer {
 
     let init = if !isnull(value) { self.lower_expr(value) } else { make_null_val(typ) }
 
-
-    // Propagate declared type to empty/untyped slice init (e.g. let x: [Token] = [])
-
-    // Propagate declared type to empty/untyped slice init (e.g. let x: [Token] = [])
+    // Propagate declared type to slice init when elem types mismatch
+    // (e.g. let x: [Token] = []  or  let x: [Printable] = [d, c])
     if !isnull(init) && !isnull(typ) && typ!.kind is TySlice {
       if !isnull(init!.typ) && init!.typ!.kind is TySlice {
         let elem_bad = isnull(init!.typ!.elem) || init!.typ!.elem!.kind is TyAny || init!.typ!.elem!.kind is TyUnit
-        if elem_bad {
+        // Also propagate when declared elem is interface but init elem is concrete
+        let elem_iface_mismatch = !elem_bad && !isnull(typ!.elem) && typ!.elem!.kind is TyInterfaceRef && !(init!.typ!.elem!.kind is TyInterfaceRef)
+        if elem_bad || elem_iface_mismatch {
           init!.typ = typ
           // Also update the underlying temp's expression type
           if init!.kind is ValTemp {
