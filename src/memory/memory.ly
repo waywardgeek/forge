@@ -667,10 +667,13 @@ func slab_rewrite(prog: LProgram) {
   let mut fi = 0
   while fi < len(prog.functions) {
     let f = prog.functions[fi]
-    // Skip RC instrumentation for trusted functions
+    // Skip RC instrumentation for trusted functions, but still rewrite class allocs to slab allocs
     if !f.is_trusted {
       let new_body = slab_rewrite_stmts(f.body, f.body, escape_map, prog, f.params)
       prog.functions[fi].body = new_body
+    } else {
+      // Trusted functions: only rewrite ExClassAlloc → ExSlabAlloc (no RC)
+      slab_rewrite_allocs_only(f.body, prog)
     }
 
     // Inject slab_free(self) at end of destroy methods
@@ -2852,4 +2855,47 @@ func rc_handles_match(incr: LRefIncrData?, decr: LRefDecrData?) -> bool {
     return a.temp_id == b.temp_id
   }
   return false
+}
+
+
+// slab_rewrite_allocs_only: walk statements in trusted functions and
+// rewrite ExClassAlloc → ExSlabAlloc (with inline field inits) without
+// adding any RC instrumentation.
+func slab_rewrite_allocs_only(stmts: [LStmt?], prog: LProgram) {
+  let mut i = 0
+  while i < len(stmts) {
+    let s = stmts[i]
+    if isnull(s) {
+      i = i + 1
+      continue
+    }
+    // Rewrite ExClassAlloc → ExSlabAlloc in TempDef
+    if s!.kind is StTempDef && !isnull(s!.temp_def) && !isnull(s!.temp_def!.expr) {
+      let e = s!.temp_def!.expr!
+      if e.kind is ExClassAlloc {
+        let d = e.class_alloc!
+        e.kind = ExSlabAlloc
+        e.slab_alloc = LSlabAllocData {
+          class_name: d.class_name,
+          fields: d.fields,
+        }
+        e.class_alloc = null
+      }
+    }
+    // Recurse into if/while/for bodies
+    if s!.kind is StIf && !isnull(s!.if_data) {
+      slab_rewrite_allocs_only(s!.if_data!.then_body, prog)
+      slab_rewrite_allocs_only(s!.if_data!.else_body, prog)
+    }
+    if s!.kind is StWhile && !isnull(s!.while_data) {
+      slab_rewrite_allocs_only(s!.while_data!.body, prog)
+    }
+    if s!.kind is StFor && !isnull(s!.for_data) {
+      slab_rewrite_allocs_only(s!.for_data!.body, prog)
+    }
+    if s!.kind is StBlock && !isnull(s!.block) {
+      slab_rewrite_allocs_only(s!.block!.stmts, prog)
+    }
+    i = i + 1
+  }
 }

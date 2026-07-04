@@ -701,7 +701,7 @@ func cmd_compile(args: [string]) -> bool {
   let mut inputs: [string] = []
   let mut output = ""
   let mut lir_dump = ""
-  let mut soa = false
+  let mut soa = true
   let mut detect_uaf = false
   let mut rc_free = true
   let mut unsafe_mode = false
@@ -720,6 +720,8 @@ func cmd_compile(args: [string]) -> bool {
       // accepted for backwards compat
     } else if args[i] == "--soa" {
       soa = true
+    } else if args[i] == "--aos" {
+      soa = false
     } else if args[i] == "--detect-uaf" {
       detect_uaf = true
     } else if args[i] == "--rc-free" {
@@ -796,7 +798,7 @@ func cmd_test(args: [string]) -> bool {
   let mut inputs: [string] = []
   let mut output = ""
   let mut lir_dump = ""
-  let mut soa = false
+  let mut soa = true
   let mut detect_uaf = false
   let mut rc_free = true
   let mut unsafe_mode = false
@@ -814,6 +816,8 @@ func cmd_test(args: [string]) -> bool {
       }
     } else if args[i] == "--soa" {
       soa = true
+    } else if args[i] == "--aos" {
+      soa = false
     } else if args[i] == "--detect-uaf" {
       detect_uaf = true
     } else if args[i] == "--rc-free" {
