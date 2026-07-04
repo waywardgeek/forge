@@ -1363,11 +1363,15 @@ lyric parser {
       // Named type with optional type args
       let mut type_name = name.text
 
-      // Dotted names: pkg.Type
+      // Dotted names: X.Y — could be pkg.Type or Interface.Member.
+      // Emit QualifiedType and let the checker resolve semantics.
       if self.peek().kind == PDot {
         self.next()
         let sub = self.expect(LIdent)?
-        type_name = type_name + "." + sub!.text
+        return (TypeExpr {
+          QualifiedType(sym(type_name), sym(sub!.text)),
+          span: self.make_span(start)
+        }, null)
       }
 
       let mut args: [TypeExpr] = []

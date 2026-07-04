@@ -628,7 +628,8 @@ enum TypeExprKind_Tag {
     TypeExprKind_Generator = 8,
     TypeExprKind_Lock = 9,
     TypeExprKind_Unit = 10,
-    TypeExprKind_InterfaceType = 11
+    TypeExprKind_QualifiedType = 11,
+    TypeExprKind_InterfaceType = 12
 };
 
 typedef struct {
@@ -671,6 +672,11 @@ typedef struct {
 } TypeExprKind_Generator_Data;
 
 typedef struct {
+    Sym* base;
+    Sym* member;
+} TypeExprKind_QualifiedType_Data;
+
+typedef struct {
     Sym* iface_name;
     Sym* member_name;
     Sym* brand;
@@ -688,6 +694,7 @@ struct TypeExprKind {
         TypeExprKind_Func_Data func;
         TypeExprKind_Channel_Data channel;
         TypeExprKind_Generator_Data generator;
+        TypeExprKind_QualifiedType_Data qualifiedtype;
         TypeExprKind_InterfaceType_Data interfacetype;
     } data;
 };
@@ -7046,6 +7053,7 @@ static lyric_string TypeExprKind_to_string(TypeExprKind v) {
         case TypeExprKind_Generator: return LYRIC_STR("Generator");
         case TypeExprKind_Lock: return LYRIC_STR("Lock");
         case TypeExprKind_Unit: return LYRIC_STR("Unit");
+        case TypeExprKind_QualifiedType: return LYRIC_STR("QualifiedType");
         case TypeExprKind_InterfaceType: return LYRIC_STR("InterfaceType");
         default: return LYRIC_STR("<unknown TypeExprKind>");
     }
@@ -26248,132 +26256,137 @@ LyricResult_TypeExprptr Parser_parse_base_type(Parser* self) {
             }
             Token* _t193 = _t189.value;
             Token* sub = _t193;
-            lyric_string _t194 = lyric_str_concat(type_name, LYRIC_STR("."));
+            Sym* _t194 = sym(type_name);
             Token* _t195 = lyric_unwrap_class(sub);
             lyric_string _t196 = _t195->text;
-            lyric_string _t197 = lyric_str_concat(_t194, _t196);
-            type_name = _t197;
+            Sym* _t197 = sym(_t196);
+            TypeExprKind _t198 = (TypeExprKind){.tag = TypeExprKind_QualifiedType, .data.qualifiedtype = {_t194, _t197}};
+            Span _t199 = Parser_make_span(self, start);
+            TypeExpr* _t200 = _lyric_slab_alloc_TypeExpr();
+            _t200->kind = _t198;
+            _t200->span = _t199;
+            return lyric_ok(_t200, LyricResult_TypeExprptr);
         }
-        LyricSlice_TypeExprptr _t198 = lyric_slice_empty(LyricSlice_TypeExprptr);
-        LyricSlice_TypeExprptr args = _t198;
-        Token* _t199 = Parser_peek(self);
-        TokenKind _t200 = _t199->kind;
-        TokenKind _t201 = TokenKind_PLt;
-        bool _t202 = (_t200 == _t201);
-        if (_t202) {
-            Token* _t203 = Parser_next(self);
-            _t203;
+        LyricSlice_TypeExprptr _t201 = lyric_slice_empty(LyricSlice_TypeExprptr);
+        LyricSlice_TypeExprptr args = _t201;
+        Token* _t202 = Parser_peek(self);
+        TokenKind _t203 = _t202->kind;
+        TokenKind _t204 = TokenKind_PLt;
+        bool _t205 = (_t203 == _t204);
+        if (_t205) {
+            Token* _t206 = Parser_next(self);
+            _t206;
             while (1) {
-                Token* _t204 = Parser_peek(self);
-                TokenKind _t205 = _t204->kind;
-                TokenKind _t206 = TokenKind_PGt;
-                bool _t207 = (_t205 != _t206);
-                bool _sc208 = false;
-                _sc208 = _t207;
-                if (_sc208) {
-                    Token* _t209 = Parser_peek(self);
-                    TokenKind _t210 = _t209->kind;
-                    TokenKind _t211 = TokenKind_OShr;
-                    bool _t212 = (_t210 != _t211);
-                    _sc208 = _t212;
+                Token* _t207 = Parser_peek(self);
+                TokenKind _t208 = _t207->kind;
+                TokenKind _t209 = TokenKind_PGt;
+                bool _t210 = (_t208 != _t209);
+                bool _sc211 = false;
+                _sc211 = _t210;
+                if (_sc211) {
+                    Token* _t212 = Parser_peek(self);
+                    TokenKind _t213 = _t212->kind;
+                    TokenKind _t214 = TokenKind_OShr;
+                    bool _t215 = (_t213 != _t214);
+                    _sc211 = _t215;
                 }
-                bool _sc213 = false;
-                _sc213 = _sc208;
-                if (_sc213) {
-                    Token* _t214 = Parser_peek(self);
-                    TokenKind _t215 = _t214->kind;
-                    TokenKind _t216 = TokenKind_SEOF;
-                    bool _t217 = (_t215 != _t216);
-                    _sc213 = _t217;
+                bool _sc216 = false;
+                _sc216 = _sc211;
+                if (_sc216) {
+                    Token* _t217 = Parser_peek(self);
+                    TokenKind _t218 = _t217->kind;
+                    TokenKind _t219 = TokenKind_SEOF;
+                    bool _t220 = (_t218 != _t219);
+                    _sc216 = _t220;
                 }
-                if (!(_sc213)) break;
-                LyricResult_TypeExprptr _t218 = Parser_parse_type_expr(self);
-                const char* _t219 = _t218.error;
-                bool _t220 = (_t219 == NULL);
-                bool _t221 = (!_t220);
-                if (_t221) {
-                    return lyric_err(_t219, LyricResult_TypeExprptr);
+                if (!(_sc216)) break;
+                LyricResult_TypeExprptr _t221 = Parser_parse_type_expr(self);
+                const char* _t222 = _t221.error;
+                bool _t223 = (_t222 == NULL);
+                bool _t224 = (!_t223);
+                if (_t224) {
+                    return lyric_err(_t222, LyricResult_TypeExprptr);
                 }
-                TypeExpr* _t222 = _t218.value;
-                TypeExpr* arg = _t222;
-                TypeExpr* _t223 = lyric_unwrap_class(arg);
-                LyricSlice_TypeExprptr _t224 = ({ lyric_push(&args, _t223, LyricSlice_TypeExprptr); args; });
-                args = _t224;
-                Token* _t225 = Parser_peek(self);
-                TokenKind _t226 = _t225->kind;
-                TokenKind _t227 = TokenKind_PComma;
-                bool _t228 = (_t226 == _t227);
-                if (_t228) {
-                    Token* _t229 = Parser_next(self);
-                    _t229;
+                TypeExpr* _t225 = _t221.value;
+                TypeExpr* arg = _t225;
+                TypeExpr* _t226 = lyric_unwrap_class(arg);
+                LyricSlice_TypeExprptr _t227 = ({ lyric_push(&args, _t226, LyricSlice_TypeExprptr); args; });
+                args = _t227;
+                Token* _t228 = Parser_peek(self);
+                TokenKind _t229 = _t228->kind;
+                TokenKind _t230 = TokenKind_PComma;
+                bool _t231 = (_t229 == _t230);
+                if (_t231) {
+                    Token* _t232 = Parser_next(self);
+                    _t232;
                 }
             }
-            Token* _t230 = Parser_peek(self);
-            TokenKind _t231 = _t230->kind;
-            TokenKind _t232 = TokenKind_OShr;
-            bool _t233 = (_t231 == _t232);
-            if (_t233) {
-                Token* _t234 = Parser_next(self);
-                Token* shr_tok = _t234;
-                TokenKind _t235 = TokenKind_PGt;
-                Span _t236 = shr_tok->span;
-                Pos _t237 = _t236.start;
-                Sym* _t238 = _t237.file;
+            Token* _t233 = Parser_peek(self);
+            TokenKind _t234 = _t233->kind;
+            TokenKind _t235 = TokenKind_OShr;
+            bool _t236 = (_t234 == _t235);
+            if (_t236) {
+                Token* _t237 = Parser_next(self);
+                Token* shr_tok = _t237;
+                TokenKind _t238 = TokenKind_PGt;
                 Span _t239 = shr_tok->span;
                 Pos _t240 = _t239.start;
-                int32_t _t241 = _t240.line;
+                Sym* _t241 = _t240.file;
                 Span _t242 = shr_tok->span;
                 Pos _t243 = _t242.start;
-                int32_t _t244 = _t243.column;
-                int32_t _t245 = (_t244 + 1);
-                Pos _t246 = (Pos){.file = _t238, .line = _t241, .column = _t245};
-                Span _t247 = shr_tok->span;
-                Pos _t248 = _t247.end;
-                Span _t249 = (Span){.start = _t246, .end = _t248};
-                Token* _t250 = _lyric_slab_alloc_Token();
-                _t250->kind = _t235;
-                _t250->text = LYRIC_STR(">");
-                _t250->span = _t249;
-                Parser_push_back(self, _t250);
+                int32_t _t244 = _t243.line;
+                Span _t245 = shr_tok->span;
+                Pos _t246 = _t245.start;
+                int32_t _t247 = _t246.column;
+                int32_t _t248 = (_t247 + 1);
+                Pos _t249 = (Pos){.file = _t241, .line = _t244, .column = _t248};
+                Span _t250 = shr_tok->span;
+                Pos _t251 = _t250.end;
+                Span _t252 = (Span){.start = _t249, .end = _t251};
+                Token* _t253 = _lyric_slab_alloc_Token();
+                _t253->kind = _t238;
+                _t253->text = LYRIC_STR(">");
+                _t253->span = _t252;
+                Parser_push_back(self, _t253);
             } else {
-                TokenKind _t252 = TokenKind_PGt;
-                LyricResult_Tokenptr _t253 = Parser_expect(self, _t252);
-                const char* _t254 = _t253.error;
-                bool _t255 = (_t254 == NULL);
-                bool _t256 = (!_t255);
-                if (_t256) {
-                    return lyric_err(_t254, LyricResult_TypeExprptr);
+                TokenKind _t255 = TokenKind_PGt;
+                LyricResult_Tokenptr _t256 = Parser_expect(self, _t255);
+                const char* _t257 = _t256.error;
+                bool _t258 = (_t257 == NULL);
+                bool _t259 = (!_t258);
+                if (_t259) {
+                    return lyric_err(_t257, LyricResult_TypeExprptr);
                 }
-                Token* _t257 = _t253.value;
-                _t257;
+                Token* _t260 = _t256.value;
+                _t260;
             }
         }
-        Sym* _t258 = sym(type_name);
-        TypeExprKind _t259 = (TypeExprKind){.tag = TypeExprKind_Named, .data.named = {_t258, args}};
-        Span _t260 = Parser_make_span(self, start);
-        TypeExpr* _t261 = _lyric_slab_alloc_TypeExpr();
-        _t261->kind = _t259;
-        _t261->span = _t260;
-        return lyric_ok(_t261, LyricResult_TypeExprptr);
+        Sym* _t261 = sym(type_name);
+        TypeExprKind _t262 = (TypeExprKind){.tag = TypeExprKind_Named, .data.named = {_t261, args}};
+        Span _t263 = Parser_make_span(self, start);
+        TypeExpr* _t264 = _lyric_slab_alloc_TypeExpr();
+        _t264->kind = _t262;
+        _t264->span = _t263;
+        return lyric_ok(_t264, LyricResult_TypeExprptr);
         break;
     }
     case 39: {
         Parser_next(self);
-        TypeExprKind _t263 = (TypeExprKind){.tag = TypeExprKind_Lock};
-        Span _t264 = Parser_make_span(self, start);
-        TypeExpr* _t265 = _lyric_slab_alloc_TypeExpr();
-        _t265->kind = _t263;
-        _t265->span = _t264;
-        return lyric_ok(_t265, LyricResult_TypeExprptr);
+        TypeExprKind _t266 = (TypeExprKind){.tag = TypeExprKind_Lock};
+        Span _t267 = Parser_make_span(self, start);
+        TypeExpr* _t268 = _lyric_slab_alloc_TypeExpr();
+        _t268->kind = _t266;
+        _t268->span = _t267;
+        return lyric_ok(_t268, LyricResult_TypeExprptr);
         break;
     }
     default: {
-        Span _t266 = tok->span;
-        TokenKind _t267 = tok->kind;
-        lyric_string _t268 = tok->text;
-        lyric_string _t269 = lyric_sprintf("expected type, got %.*s (%.*s)", (int)TokenKind_to_string(_t267).len, (const char*)TokenKind_to_string(_t267).data, (int)_t268.len, (const char*)_t268.data);
-        Error* _t270 = Parser_make_error(self, _t266, _t269);
-        return lyric_err((const char*)_t270->msg.data, LyricResult_TypeExprptr);
+        Span _t269 = tok->span;
+        TokenKind _t270 = tok->kind;
+        lyric_string _t271 = tok->text;
+        lyric_string _t272 = lyric_sprintf("expected type, got %.*s (%.*s)", (int)TokenKind_to_string(_t270).len, (const char*)TokenKind_to_string(_t270).data, (int)_t271.len, (const char*)_t271.data);
+        Error* _t273 = Parser_make_error(self, _t269, _t272);
+        return lyric_err((const char*)_t273->msg.data, LyricResult_TypeExprptr);
         break;
     }
     }

@@ -37,6 +37,9 @@ lyric ast {
     Generator(elem: TypeExpr)
     Lock
     Unit
+    // Qualified type: X.Y in type position. Parser doesn't know if X is a
+    // module, interface, or enum — the checker resolves the semantics.
+    QualifiedType(base: Sym, member: Sym)
     // Interface family member type: Iface.Member or brand.Member in type position.
     // member_name == null means bare interface name (single-param case).
     // brand == null means unbranded (the common case).
