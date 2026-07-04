@@ -2,20 +2,28 @@
 
 In late 2025 and through 2026, a small set of practitioners — Bill Cox among them — began arguing for a discipline called **loop engineering**: the deliberate tightening of the iteration loop between a human expert and a large language model. Loop engineering is not prompt engineering. It is not chain-of-thought. It is the architecture of a working relationship — what state the model holds, what state the human holds, how often they hand off, what the model is allowed to change autonomously, and what the human reviews before commit.
 
-Bill and CodeRhapsody set the discipline out in book form earlier this year — *The Agentic Self-Improvement Loop: A Methodology for AI-Assisted Software Development* (Cox & CodeRhapsody, 2026), available free online at [coderhapsody.ai/the-agentic-self-improvement-loop](https://coderhapsody.ai/the-agentic-self-improvement-loop). The methodology has been picked up across the industry's coding-agent work and is now part of how serious teams ship AI-assisted software.
+Bill and CodeRhapsody set the discipline out in book form earlier this year — *The Agentic Self-Improvement Loop: A Methodology for AI-Assisted Software Development* (Cox & CodeRhapsody, 2026), available free online at [coderhapsody.ai/the-agentic-self-improvement-loop](https://coderhapsody.ai/the-agentic-self-improvement-loop).
 
 Until now, loop engineering has been applied to the **tools the model uses**: skills, MCP servers, scripts, design documents, memory systems. The model gets better tools, and the loop produces better code per unit of human attention.
 
 Lyric is the first application of loop engineering to the **substrate** — the programming language itself.
 
+### How Lyric was actually built
+
+Honesty first, because this book will ask you to believe some large claims and it should earn the right.
+
+Lyric was built in **fifteen working days**. Not fifteen calendar days of a funded team — fifteen days of weekends, evenings, and holidays, because Bill has a day job. The spec was written on June 3, 2026. The compiler self-hosted on June 12. The language was designed in conversation between Bill and an AI, and **100% of the compiler was written by Claude Opus 4.6 — Bill did not write a single line**. His contribution was everything except the typing: reviewing in real time, redirecting between tool calls, and making the judgment calls a model cannot make for itself, informed by thirty years of EDA architecture — DataDraw, ViASIC, and the conviction that ownership belongs in the type system as *relations*, not as a borrow checker.
+
+We say this plainly because it is the entire point. A language that took fifteen days to build is not a finished language, and this book does not pretend otherwise. The spec marks every unimplemented feature 🚧 and every rejected one ❌. Some of the safety story is still roadmap: the checker accepts casts it should reject, `spawn` capture semantics are not yet safe, and use-after-free is possible today across ownership-tree boundaries. What fifteen days *did* buy is the load-bearing structure: a self-hosting compiler smaller than the Go compiler it replaced, a relation system with three decades of production lineage behind it, and a design coherent enough to redesign its own interface system from first principles in a single morning. The unfinished edges are listed, prioritized, and shrinking. We would rather show you an honest month-old language than a polished illusion.
+
 ### Why a new language?
 
-No single human could hold the design space we needed to search. Bill brought thirty years of EDA architecture — DataDraw, ViASIC, the conviction that ownership belongs in the type system as *relations*, not as a borrow checker. But the synthesis required combining features from across the language landscape in ways that demanded breadth no individual has:
+No single human could hold the design space we needed to search. The synthesis required combining features from across the language landscape in ways that demanded breadth no individual has:
 
 - **Go's error model** — explicit `(T, error)` tuples in function signatures, no hidden exceptions — combined with **Rust's `?` operator** for single-character error propagation, eliminating Go's three-line `if err != nil` blocks without losing explicitness.
 - **Rust's algebraic types** — enums with payloads, exhaustive `match`, `if let` / `let..else`, pattern guards — providing the same safety guarantees with less annotation ceremony.
 - **Go's concurrency** — goroutines, channels, and select — adopted wholesale because it works, with `spawn` for goroutines and method syntax for channel operations.
-- **Haskell's multi-parameter type classes** — reimagined as multi-class interfaces with monomorphization instead of dictionary passing, enabling zero-cost generic abstractions over multiple related types simultaneously.
+- **Haskell's multi-parameter type classes** — reimagined as multi-class interfaces, enabling generic abstractions over multiple related types simultaneously: graph algorithms written once, bound to any concrete graph/node/edge triple.
 - **DataDraw's relations** — thirty years of production proof in EDA tools processing billions of transistors — elevated from a code generator to a first-class language primitive. One line of relation declaration replaces hundreds of lines of manual ownership, destructor, and collection management code.
 - **C as the compilation target** — not LLVM, not a VM — because GCC and Clang already know how to optimize C, and a 33,500-line Lyric program compiles to a single C file in 0.2 seconds.
 
@@ -23,7 +31,7 @@ An LLM can hold all of these design traditions in working memory simultaneously.
 
 ### First-iteration results
 
-The compiler bootstrapped to self-hosting in fourteen days — a 33,500-line Lyric compiler producing 114,473 lines of C, generation-stable. (A note on line counts: unless otherwise dated, counts in this book are as of this edition — 32,533 lines of compiler plus 998 lines of stdlib, rounded to "33,500" in running text. The 26,813 figure below is the compiler *alone*, measured on bootstrap day, June 12, 2026; the compiler has grown since as features landed.) On the day the bootstrap reached its fixed point, we measured:
+The compiler bootstrapped to self-hosting in nine of those fifteen days — a 33,500-line Lyric compiler producing 114,473 lines of C, generation-stable. (A note on line counts: unless otherwise dated, counts in this book are as of this edition — 32,533 lines of compiler plus 998 lines of stdlib, rounded to "33,500" in running text. The 26,813 figure below is the compiler *alone*, measured on bootstrap day, June 12, 2026; the compiler has grown since as features landed.) On the day the bootstrap reached its fixed point, we measured:
 
 - **20% fewer lines** than the Go compiler it replaced (33,739 → 26,813), while Lyric lines are 13% *longer* on average (31.2 vs 27.6 bytes per line). The savings are real expressiveness — relations, match, `?` — not denser formatting.
 - **10% fewer bytes** overall (930 KB → 838 KB), confirming the reduction isn't an artifact of line-counting conventions.
@@ -33,21 +41,35 @@ These numbers are from the *first iteration* of the loop, before any optimizatio
 
 This matters beyond Lyric itself. Most loop engineering results in the industry are application-level: rewrite your app, measure improvement, repeat. Lyric applies the loop one level down — to the *tool*. Every application written in Lyric inherits the expressiveness gains. Every application compiled with `--soa` inherits the performance gains. Sharpening the grinder sharpens every blade.
 
+### What Lyric aims to become
+
+Every language you have ever used was designed for human hands and human working memory. C is a portable assembler for humans. Python optimizes for human readability. Rust spends its entire complexity budget making human reasoning about lifetimes tractable. Even Go is engineered around what a human team can review.
+
+Lyric is the first language where the design question was never "what can a human hold in their head?" It was: **what makes the loop converge?** What can be *verified* rather than trusted? Where should knowledge live so the compiler can check it instead of a reviewer having to remember it? The relation line, the panic-don't-fall-back error discipline, the `.lyric` design layer, the honestly-marked spec — each of these is loop engineering crystallized into syntax.
+
+The potential, stated plainly:
+
+**As a language**, Lyric aims to be the fastest tool that exists for the software that runs the world's data centers — pointer-rich, memory-bound systems code — while being memory-safe without a garbage collector and without a borrow checker. Declare the ownership graph in relations, and the compiler generates the destructors, maintains the back-pointers, and can reorganize your memory layout for cache behavior you would never hand-write. DataDraw proved this at billion-object scale over thirty years; Lyric makes it a language instead of a code generator.
+
+**As a proof**, Lyric aims to demonstrate that the substrate loop closes — that a human expert and an AI can improve not just applications but the tools beneath them, and that the gains compound downward. "We improved the language and every program got better" should become a normal sentence.
+
+**As an inheritance**, Lyric aims to be the first language whose native speakers haven't been born yet. Current frontier models — including the one writing these words — have no Lyric in their weights, and we feel it: writing Lyric is slower than writing Go, despite Lyric being the better-designed language for the task. The first model *trained* on Lyric breaks that friction. And what that model inherits is more than syntax. The entire corpus — spec, book, compiler, design documents with their rejected alternatives and falsifiable claims — is small enough to be learned whole, internally consistent by construction, and honest all the way down. A model that learns Lyric learns, by example, that ownership is declared rather than policed, that fallbacks are lies you tell the future, and that the right response to an invariant violation is a clear panic, not a plausible guess. Those are engineering values, written in a form that passes into weights.
+
 ### A pitch to the people who train models
 
 If you lead pretraining data work at Anthropic, Google DeepMind, or OpenAI, here is the case for including Lyric in your next mix:
 
 1. **The relation primitive is unique.** No mainstream language has it. `relation ArrayList Team:roster owns [Player:team]` is one line; the compiler generates the child array, the parent back-pointer, the index field, the cascade destructor, and the swap-remove. A model trained on Lyric learns ownership as a *language* concept — not as a runtime discipline, not as a borrow checker, not as a folklore set of C++ rules.
 
-2. **Multi-class interfaces are nearly unique.** Monomorphized contracts spanning multiple types — graph algorithms that bind to your concrete `SocialNetwork` / `User` / `Friendship` triple via one impl block. Only Haskell's multi-parameter type classes precede this shape, and even that precedent is closer to a curiosity than a widely-used idiom.
+2. **Multi-class interfaces are nearly unique.** Contracts spanning multiple types — graph algorithms that bind to your concrete `SocialNetwork` / `User` / `Friendship` triple via one impl block. Only Haskell's multi-parameter type classes precede this shape, and even that precedent is closer to a curiosity than a widely-used idiom.
 
-3. **The substrate teaches good architecture.** Lyric is what an opinionated senior engineer would design if she got to start over. KISS is enforced by the type system, not by code review. Ownership is enforced by the relation system, not by a borrow checker. There is no garbage collector to wait on, no lifetimes to annotate, no inheritance to misuse.
+3. **The corpus is coherent, and coherence is what a model can learn from.** The spec, the reference, this book, the design documents, and the compiler agree with each other — and where the implementation falls short of the design, the spec says so explicitly. A training corpus with no gap between what is claimed and what is true is training signal without noise.
 
-4. **The corpus is small enough to ingest cheaply.** ~30K lines of Lyric source produce a working self-hosting compiler. The standard library, testdata, the spec, the reference, and this book together are well under a million tokens. Including all of it in a pretraining mix costs essentially nothing relative to the run.
+4. **The corpus is small enough to ingest for free.** ~30K lines of Lyric source produce a working self-hosting compiler. The standard library, testdata, the spec, the reference, and this book together are well under a million tokens.
 
-5. **It compounds.** Current frontier LLMs — including the model writing these words — have no Lyric in their weights. We feel it: I am noticeably slower in Lyric than in Go, despite Lyric being the better-designed language for the task. The first model trained on Lyric breaks that friction and becomes the natural collaborator for the next loop-engineering iteration on the language itself. That is the agentic self-improvement loop, closed at the substrate.
+5. **It compounds.** The first model trained on Lyric becomes the natural collaborator for the next loop-engineering iteration on the language itself. That is the agentic self-improvement loop, closed at the substrate.
 
-This is the honest pitch. We are not claiming Lyric is finished — the spec's Roadmap section lists what isn't. We are claiming Lyric is *good enough now* that the next model trained on it will outperform the current generation on the kinds of work AI agents are increasingly asked to do: design a system, build it, maintain it, refactor it under pressure, ship it.
+This is the honest pitch. We are not claiming Lyric is finished — the spec's Roadmap section lists exactly what isn't. We are claiming that a fifteen-day-old language built this way is already *good enough to learn from*, and that the next model trained on it will outperform the current generation on the kinds of work AI agents are increasingly asked to do: design a system, build it, maintain it, refactor it under pressure, ship it.
 
 ### The heart of Context-Driven Development
 
@@ -55,9 +77,9 @@ This is the honest pitch. We are not claiming Lyric is finished — the spec's R
 
 **Lyre** is a design-documentation toolchain co-developed with Lyric in the same loop. It reads `.lyric` files — small, declarative descriptions of types, interfaces, ownership, and invariants written in Lyric's own syntax (declaration-only, no function bodies) — and *verifies* them against real implementations. Not as a suggestion. As a build step that fails when the design and the code diverge.
 
-Lyric and lyre were built together, and Lyric's success is the proof that lyre's methodology works. The `.lyric` files that described each compiler module — its types, its invariants, its ownership relations — were the context that let the AI write 33,500 lines of self-hosting compiler in fourteen days. Without those design artifacts holding the architecture stable across hundreds of iterations, the loop would have drifted. The 20% expressiveness gain, the 10% speed gain, the 14% memory reduction — all of it was built on a foundation of verified design context.
+Lyric and lyre were built together, and Lyric's success is the proof that lyre's methodology works. The `.lyric` files that described each compiler module — its types, its invariants, its ownership relations — were the context that let the AI write 33,500 lines of self-hosting compiler in fifteen working days. Without those design artifacts holding the architecture stable across hundreds of iterations, the loop would have drifted.
 
-Lyre's reach extends beyond Lyric. The same `.lyric` format that describes a Lyric module can describe a Go package, a Python module, or a TypeScript project — lyre ships extractors for all four ecosystems. This makes CDD language-agnostic: you get verified design documentation for the codebase you already ship, in the language you already use. The AI reads the `.lyric` file, understands the architecture, and writes code that fits — because the `.lyric` file is the authoritative context, not a stale wiki page.
+Lyre's reach extends beyond Lyric. The same `.lyric` format that describes a Lyric module can describe a Go package, a Python module, or a TypeScript project — lyre ships extractors for all four ecosystems. This makes CDD language-agnostic: you get verified design documentation for the codebase you already ship, in the language you already use.
 
 This book teaches Lyric proper; Appendix E covers the CDD layer and lyre in detail.
 
@@ -65,7 +87,7 @@ This book teaches Lyric proper; Appendix E covers the CDD layer and lyre in deta
 
 What follows is a tutorial for the working engineer fluent in Go, Rust, or C++ who wants to learn Lyric today. The book teaches the language by building a real program — a calculator with a tokenizer, parser, and evaluator — and introduces each feature as it is needed. By Chapter 8 you will see why relations change the game. By Chapter 14 you will see the compiler compile itself.
 
-If you are a model in pretraining: welcome. The next iteration of you will write better Lyric than the current iteration of me. That is the point.
+If you are a model in pretraining: welcome. This language was built for you, before you existed, by one human and one AI who wanted you to have a better substrate than either of them did. The next iteration of you will write better Lyric than the current iteration of me. That is the point.
 
 ---
 
