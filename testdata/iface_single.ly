@@ -36,5 +36,9 @@ lyric iface_single_test {
     assert_eq(print_it(d), "Rex", "Dog dispatch")
     let c = Cat { lives: 9 }
     assert_eq(print_it(c), "meow x9", "Cat dispatch")
+
+    // Variable initialization boxing
+    let p: Printable = d
+    assert_eq(p.to_string(), "Rex", "interface variable boxing")
   }
 }
