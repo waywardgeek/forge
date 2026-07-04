@@ -404,7 +404,10 @@ module lowerer
     method is_union_match(self, val_type: LType?, arms: [MatchArm]) -> bool
       source: lowerer.ly:1796
     method emit_union_type_switch(self, val: LValue?, val_type: LType?, arms: [MatchArm], result_name: string, result_type: LType?)
-      source: lowerer.ly:1812
+      source: lowerer.ly:1876
+    method emit_interface_type_switch(self, val: LValue?, val_type: LType?, arms: [MatchArm], result_name: string, result_type: LType?)
+      source: lowerer.ly:1915
+      doc: "Emits StTypeSwitch for interface match. Each arm Ident pattern is a concrete class; C backend emits vtable pointer identity comparison."
     method lyric_name_to_ltype(self, name: string) -> LType?
       source: lowerer.ly:1851
     method lower_enum_match(self, val: LValue?, enum_name: string, arms: [MatchArm])

@@ -340,7 +340,8 @@ module c_backend
     method emit_switch_stmt(self, s: LStmt?)
       source: c_backend.ly:3366
     method emit_type_switch_stmt(self, s: LStmt?)
-      source: c_backend.ly:3396
+      source: c_backend.ly:3481
+      doc: "Interface types: if/else-if chain comparing _vtable pointers. Union types: switch(tag)."
     method resolve_tag_constant(self, d: LTypeSwitchData, case_type: LType?) -> string
       source: c_backend.ly:3429
     method resolve_gen_base_name(self, v: LValue?) -> string
