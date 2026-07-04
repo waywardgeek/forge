@@ -1158,6 +1158,7 @@ func merge_stdlib(file: File?, std_file: File?) {
     // Build stdlib lookups
     let std_iface_map = Dict<Sym, InterfaceDecl>()
     let std_class_map = Dict<Sym, ClassDecl>()
+    let std_enum_map = Dict<Sym, EnumDecl>()
     let std_func_map = Dict<Sym, FuncDecl>()
 
     let std_blocks = std_file!.fb.children()
@@ -1173,6 +1174,12 @@ func merge_stdlib(file: File?, std_file: File?) {
         for i in range(0, len(classes)) {
             if classes[i].name != null {
                 std_class_map.set(sym(classes[i].name!.name), classes[i])
+            }
+        }
+        let enums = sb.ed.children()
+        for i in range(0, len(enums)) {
+            if enums[i].name != null {
+                std_enum_map.set(sym(enums[i].name!.name), enums[i])
             }
         }
         let fns = sb.fd.children()
@@ -1209,6 +1216,10 @@ func merge_stdlib(file: File?, std_file: File?) {
         }
     }
 
+    // Error class and ErrorCode enum are always needed (error returns use them)
+    used_types.set(sym("Error"), true)
+    used_types.set(sym("ErrorCode"), true)
+
     // Collect referenced classes
     let mut std_classes: [ClassDecl] = []
     let type_keys = used_types.keys()
@@ -1231,6 +1242,16 @@ func merge_stdlib(file: File?, std_file: File?) {
                 used_types.set(fname, true)
                 std_classes = append(std_classes, cls_entry!.value)
             }
+        }
+    }
+
+    // Collect referenced enums from stdlib
+    let mut std_enums: [EnumDecl] = []
+    let enum_type_keys = used_types.keys()
+    for i in range(0, len(enum_type_keys)) {
+        let entry = std_enum_map.get(enum_type_keys[i])
+        if entry != null {
+            std_enums = append(std_enums, entry!.value)
         }
     }
 
@@ -1556,7 +1577,7 @@ func merge_stdlib(file: File?, std_file: File?) {
     }
 
     // Nothing to merge
-    let total = (len(std_ifaces) + len(std_classes) + len(std_funcs) + len(std_relations) + len(std_constants))
+    let total = (len(std_ifaces) + len(std_classes) + len(std_enums) + len(std_funcs) + len(std_relations) + len(std_constants))
     if total == 0 {
         return
     }
@@ -1569,6 +1590,9 @@ func merge_stdlib(file: File?, std_file: File?) {
         }
         for i in range(0, len(std_classes)) {
             array_append<LyricBlock, ClassDecl>(block0, std_classes[i])
+        }
+        for i in range(0, len(std_enums)) {
+            array_append<LyricBlock, EnumDecl>(block0, std_enums[i])
         }
         for i in range(0, len(std_funcs)) {
             array_append<LyricBlock, FuncDecl>(block0, std_funcs[i])

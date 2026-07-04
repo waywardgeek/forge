@@ -968,6 +968,15 @@ func CGen.emit_value_as_error(self, v: LValue?) -> string {
       }
     }
   }
+  // Check LValue's own type annotation (catch-all for temps/vars not in dicts)
+  if !isnull(v!.typ) {
+    if v!.typ!.kind is TyClassHandle && v!.typ!.name == "Error" {
+      return self.emit_value(v)
+    }
+    if v!.typ!.kind is TyError {
+      return self.emit_value(v)
+    }
+  }
   // Value is a string expression — wrap in Error alloc
   return self.emit_error_alloc(self.emit_value(v))
 }
@@ -2092,7 +2101,8 @@ func CGen.emit_expr_str(self, e: LExpr?) -> string {
         if elem_is_iface {
           let concrete_class = self.resolve_concrete_class(d.args[i])
           if concrete_class != "" {
-            arg_str = f"({iname}){{._data = {arg_str}, ._vtable = &{concrete_class}_as_{iname}}}"
+            let data_val = if self.prog!.slab_mode_soa { f"(void*)(uintptr_t){arg_str}" } else { arg_str }
+            arg_str = f"({iname}){{._data = {data_val}, ._vtable = &{concrete_class}_as_{iname}}}"
           }
         }
         sb.write(arg_str)
@@ -2905,7 +2915,8 @@ func CGen.emit_stmt(self, s: LStmt?) {
           let iname = iface_type_name(var_type)
           let src_type = self.infer_lval_type(d.init)
           if !isnull(src_type) && src_type!.kind is TyClassHandle {
-            init_str = f"({iname}){{._data = {init_str}, ._vtable = &{src_type!.name}_as_{iname}}}"
+            let data_val = if self.prog!.slab_mode_soa { f"(void*)(uintptr_t){init_str}" } else { init_str }
+            init_str = f"({iname}){{._data = {data_val}, ._vtable = &{src_type!.name}_as_{iname}}}"
           }
         }
         self.line(f"{self.c_field_decl(var_type, name)} = {init_str};")
@@ -3359,7 +3370,8 @@ func CGen.emit_return_stmt(self, s: LStmt?) {
       let iname = iface_type_name(self.current_func!.return_type)
       let val_type = self.resolve_value_type(d.values[0])
       if !isnull(val_type) && val_type!.kind is TyClassHandle {
-        self.line(f"return ({iname}){{._data = {val}, ._vtable = &{val_type!.name}_as_{iname}}};")
+        let data_val = if self.prog!.slab_mode_soa { f"(void*)(uintptr_t){val}" } else { val }
+        self.line(f"return ({iname}){{._data = {data_val}, ._vtable = &{val_type!.name}_as_{iname}}};")
         return
       }
     }

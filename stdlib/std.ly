@@ -714,12 +714,7 @@ lyric std {
     func error.message(self) -> string
   }
 
-  // Error: default concrete error type satisfying the error interface.
-  pub class Error {
-    msg: string
-
-    pub func message(self) -> string { return self.msg }
-  }
+  // (Error class moved to top of file — see line 28)
 
   // StringBuilder: efficient string building via repeated append.
   // Uses string concatenation internally until string=[u8] is implemented.
