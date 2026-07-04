@@ -553,17 +553,446 @@ to a direct offset load when monomorphized.
 
 ## 11. Worked examples (session-verified)
 
-1. **Graph** (§2, §8): erased family; `count_edges`/`max_flow` as
-   defaults compiled once; external `min_cut` as a free function via
-   UFCS; refinement to WeightedDirectedGraph with value param W.
-2. **DoublyLinked** (§7.2–7.3): flattened; labels = brands; relation-
-   backed DirectedGraph impl in five alias lines, zero adapters.
-3. **Dict<K,V>** (§7.4): generic relation as partial-impl template;
-   constraint propagation (`Hashable<K>`); per-instantiation RC
-   decisions; `void*` lineage extinct.
+These are the four cases we used to verify the design. Each is
+complete — interface, concrete classes, and use sites — and each
+exercises a different span of the design: erased families and the impl
+ladder (11.1), refinement and value parameters (11.2), state injection
+and relation unification (11.3), and generic relations (11.4).
 
-Acid test for implementation: rewrite `testdata/graph.ly` and
-`testdata/tree.ly` under this design; both must compile and run.
+### 11.1 DirectedGraph — erased family, impl ladder, UFCS
+
+**The interface.** Declares three types: `DirectedGraph.G`,
+`DirectedGraph.N`, `DirectedGraph.E` — each a fat pointer. The surface
+demands iteration (`gen`), never storage (§7.3), so slice-backed and
+link-chasing implementations satisfy it identically.
+
+```lyric
+interface DirectedGraph<G, N, E> {
+    // abstract surface
+    func G.nodes(self) -> gen N
+    func N.outgoing_edges(self) -> gen E
+    func N.incoming_edges(self) -> gen E
+    func E.src(self) -> N
+    func E.dst(self) -> N
+
+    // default methods — compiled ONCE, over fat pointers
+    pub func G.count_edges(self) -> i32 {
+        let mut total: i32 = 0
+        for n in self.nodes() {
+            for _e in n.outgoing_edges() { total = total + 1 }
+        }
+        return total
+    }
+
+    pub func N.out_degree(self) -> i32 {
+        let mut d: i32 = 0
+        for _e in self.outgoing_edges() { d = d + 1 }
+        return d
+    }
+}
+```
+
+**Level 0 — structural satisfaction, no impl.** A slice-backed toy
+whose member names match the surface exactly:
+
+```lyric
+class Airline {
+    name: string
+    airports: [Airport]
+    pub func nodes(self) -> gen Airport {
+        for a in self.airports { yield a }
+    }
+}
+
+class Airport {
+    code: string
+    deps: [Flight]
+    arrs: [Flight]
+    pub func outgoing_edges(self) -> gen Flight {
+        for f in self.deps { yield f }
+    }
+    pub func incoming_edges(self) -> gen Flight {
+        for f in self.arrs { yield f }
+    }
+}
+
+class Flight {
+    dep: Airport
+    arr: Airport
+    pub func src(self) -> Airport { return self.dep }
+    pub func dst(self) -> Airport { return self.arr }
+}
+```
+
+The signature chase (§3), from the anchor: `Airline.nodes` returns
+`gen Airport` ⇒ **N = Airport**; `Airport.outgoing_edges` returns
+`gen Flight` ⇒ **E = Flight**; `Flight.src`/`dst` return `Airport` —
+the loop closes. Checked lazily at the first boxing site. To check
+eagerly instead, assert it: `class Airline implements DirectedGraph`.
+
+**Use sites** — boxing, defaults, free functions, UFCS:
+
+```lyric
+// External algorithm: a plain function over interface types.
+// Compiled once. No genericity, no impl block, third-party-writable.
+pub func has_edges(g: DirectedGraph.G) -> bool {
+    for n in g.nodes() {
+        for _e in n.outgoing_edges() { return true }  // gen is lazy — O(1)
+    }
+    return false
+}
+
+pub func max_flow(g: DirectedGraph.G,
+                  source: DirectedGraph.N,
+                  sink: DirectedGraph.N) -> i32 {
+    // Edmonds–Karp over the abstract surface — uses only nodes(),
+    // outgoing_edges(), src(), dst(). Body elided.
+}
+
+let al = Airline { name: "Lyric Air", airports: [...] }
+
+let g: DirectedGraph.G = al          // explicit boxing (anonymous impl)
+println(al.count_edges())            // default method; receiver auto-boxed
+println(al.has_edges())              // UFCS → free function, auto-boxed
+let f = al.max_flow(jfk, sfo)        // UFCS; jfk/sfo box to DirectedGraph.N
+```
+
+Resolution order at `al.count_edges()`: concrete class method (none) →
+interface default (hit). At `al.has_edges()`: class (none) → default
+(none) → free function (hit).
+
+**Level 2 — named impls and brands.** The FPGA case: two graph
+structures over the same three classes (the routing fabric wired two
+ways). Relation labels referenced here are declared in §11.3.
+
+```lyric
+impl a_side: DirectedGraph<Net, Route, Via> {
+    G.nodes          = Net.routes.iter
+    N.outgoing_edges = Route.a_out.iter
+    N.incoming_edges = Route.a_in.iter
+    E.src            = Via.a_src.parent
+    E.dst            = Via.a_dst.parent
+}
+
+impl b_side: DirectedGraph<Net, Route, Via> {
+    G.nodes          = Net.routes.iter
+    N.outgoing_edges = Route.b_out.iter
+    N.incoming_edges = Route.b_in.iter
+    E.src            = Via.b_src.parent
+    E.dst            = Via.b_dst.parent
+}
+```
+
+`a_side.N` and `b_side.N` are distinct static types with identical
+runtime representation. Mixing is a compile error; widening is free:
+
+```lyric
+let ga: a_side.G = net
+let gb: b_side.G = net
+let na: a_side.N = route
+
+println(ga.count_edges())            // counts the a-side edge set
+println(gb.count_edges())            // counts the b-side edge set
+
+let f = gb.max_flow(na, nb)
+// ✗ compile error: max_flow's source is DirectedGraph.N brand-bound by
+//   receiver gb to b_side; na has brand a_side.
+//   The silently-traverse-the-wrong-edge-set bug is unrepresentable.
+
+func report(g: DirectedGraph.G) { println(g.count_edges()) }
+report(ga)                           // ✓ accepting site is existential —
+report(gb)                           // ✓ any brand flows in
+
+let gx: DirectedGraph.G = net
+// ✗ compile error: Net implements DirectedGraph only under named impls
+//   a_side, b_side; qualify which (net as a_side.G).
+```
+
+### 11.2 WeightedDirectedGraph — `where` refinement, value param W
+
+**The interface.** G, N, E are family parameters (receiver position ⇒
+erased); **W appears only in value positions ⇒ monomorphized** per
+binding (§2.1). The `where` clause *requires* DirectedGraph — copies
+nothing (§6).
+
+```lyric
+interface WeightedDirectedGraph<G, N, E, W>
+        where DirectedGraph<G, N, E>, Numeric<W> {
+    func E.weight(self) -> W
+
+    // Default method: DG's surface (self.nodes, n.outgoing_edges) is in
+    // scope via the where clause. Compiled once per W-binding.
+    pub func G.total_weight(self) -> W {
+        let mut sum: W = W.zero()
+        for n in self.nodes() {
+            for e in n.outgoing_edges() { sum = sum.add(e.weight()) }
+        }
+        return sum
+    }
+}
+```
+
+**Structural satisfaction extends the chase.** Add one method to the
+Level-0 classes of §11.1 and the whole refined surface is satisfied —
+no impl:
+
+```lyric
+// Flight gains:  pub func weight(self) -> f32 { return self.miles }
+
+let wg: WeightedDirectedGraph<f32>.G = al   // value params only in the spelling
+println(al.total_weight())                  // f32; auto-boxed via UFCS
+```
+
+**Free upcast via vtable prefix.** `WDG<f32>.G`'s vtable embeds
+`DG.G`'s vtable as a prefix — the upcast is the same pointer,
+reinterpreted:
+
+```lyric
+let g: DirectedGraph.G = wg        // free — no wrapper, no re-boxing
+report(g)                          // every DG algorithm works, zero glue
+
+// Free function over the refined family — note the value-param spelling:
+pub func max_weight(g: WeightedDirectedGraph<f32>.G) -> f32 {
+    let mut best: f32 = 0.0
+    for n in g.nodes() {
+        for e in n.outgoing_edges() {
+            if e.weight() > best { best = e.weight() }
+        }
+    }
+    return best
+}
+```
+
+**One impl serving both interfaces** (§6.1 case 1). For the
+relation-backed FPGA classes, an impl of WDG may bind the full
+transitive surface. If no DirectedGraph satisfaction exists yet for
+(Net, Route, Via), this *establishes* the anonymous one as a side
+effect:
+
+```lyric
+impl WeightedDirectedGraph<Net, Route, Via, f32> {
+    G.nodes          = Net.routes.iter      // DG members — establishes
+    N.outgoing_edges = Route.a_out.iter     // the anonymous DirectedGraph
+    N.incoming_edges = Route.a_in.iter      // satisfaction as a side effect
+    E.src            = Via.a_src.parent
+    E.dst            = Via.a_dst.parent
+    E.weight         = Via.delay            // field auto-getter — WDG's own member
+}
+```
+
+If an anonymous DG satisfaction *already* existed, rebinding
+`N.outgoing_edges` here would be a compile error (§6.1 case 2):
+*"outgoing_edges is already bound by the DirectedGraph satisfaction for
+Route; to rewire it, use a named impl."*
+
+### 11.3 DoublyLinked — state injection, relations as named impls
+
+**The hint interface.** One `field` declaration flips the whole
+interface to the **flattened** strategy (§7.1): fields injected under
+the label, methods monomorphized per relation, direct field access,
+zero overhead. Structural satisfaction is impossible — state requires
+a declaration.
+
+```lyric
+interface DoublyLinked<P, C> {
+    field P.first:  C?
+    field P.last:   C?
+    field C.next:   C?
+    field C.prev:   C?
+    field C.parent: P?
+
+    pub trusted func P.append(self, child: C) {
+        ref child
+        child.prev = self.last
+        child.next = null
+        if isnull(self.first) {
+            self.first = child
+        } else {
+            self.last!.next = child
+        }
+        self.last = child
+        child.parent = self
+    }
+
+    pub trusted func P.remove(self, child: C) {
+        if isnull(child.prev) { self.first = child.next }
+        else { child.prev!.next = child.next }
+        if isnull(child.next) { self.last = child.prev }
+        else { child.next!.prev = child.prev }
+        child.next = null
+        child.prev = null
+        child.parent = null
+        unref child
+    }
+
+    // Iteration as a default method — injected under the label scope.
+    // This is what makes the capability bridge below one line per slot.
+    pub func P.iter(self) -> gen C {
+        let mut cur = self.first
+        while !isnull(cur) {
+            yield cur!
+            cur = cur!.next
+        }
+    }
+
+    destructor owns P {
+        let mut cur = self.first
+        while !isnull(cur) {
+            let nxt = cur!.next
+            cur!.destroy()          // cascade
+            cur = nxt
+        }
+    }
+    destructor owns C { self.parent!.remove(self) }
+    destructor refs P {
+        let mut cur = self.first
+        while !isnull(cur) {
+            let nxt = cur!.next
+            cur!.next = null        // unlink; children survive
+            cur!.prev = null
+            cur!.parent = null
+            cur = nxt
+        }
+        self.first = null
+        self.last = null
+    }
+    destructor refs C { self.parent!.remove(self) }
+}
+```
+
+**Relations ARE named impls; labels are the brand** (§7.2). The FPGA
+schema — note two relations on the *same* class pair (Route, Via),
+legal because each label pair is a distinct brand with a disjoint
+field bundle:
+
+```lyric
+class Net   { name: string }
+class Route { id: i32 }
+class Via   { delay: f32 }
+
+relation DoublyLinked Net:routes  owns [Route:net]
+relation DoublyLinked Route:a_out refs [Via:a_src]   // same (P, C) pair —
+relation DoublyLinked Route:a_in  refs [Via:a_dst]   // four times, four
+relation DoublyLinked Route:b_out refs [Via:b_src]   // brands, four disjoint
+relation DoublyLinked Route:b_in  refs [Via:b_dst]   // field bundles
+```
+
+Each `relation` line desugars to a named impl whose brand is the label
+pair; e.g. the first is
+`impl DoublyLinked<Net:routes, Route:net> owns { }`. The `owns`/`refs`
+keyword selects the destructor pair. Injected storage is label-mangled
+(`Net.__routes_first`, `Via.__a_src_next`, …); user access goes through
+the dotted scope:
+
+```lyric
+let net = Net { name: "n1" }
+let r = Route { id: 0 }
+net.routes.append(r)                 // monomorphized, direct field access
+let head = net.routes.first          // field read through the label scope
+for v in r.a_out.iter() { ... }      // default method under the label
+r.destroy()                          // owns cascade: Route's destructor
+                                     // fires each refs-relation unlink
+```
+
+**The capability bridge — what killed Wave 2** (§7.3). Because the
+DirectedGraph surface demands `gen` and DoublyLinked provides `iter` as
+a default under each label, wiring intrusive links to the shared
+algorithm library is one alias line per slot, with labeled-scope
+members and relation back-pointers as legal RHS:
+
+```lyric
+impl DirectedGraph<Net, Route, Via> {
+    G.nodes          = Net.routes.iter
+    N.outgoing_edges = Route.a_out.iter
+    N.incoming_edges = Route.a_in.iter
+    E.src            = Via.a_src.parent    // back-pointer auto-getter
+    E.dst            = Via.a_dst.parent
+}
+
+println(net.count_edges())     // default method, fat pointers, chasing
+let f = net.max_flow(s, t)     // intrusive links — zero adapter methods,
+                               // zero materialized slices
+```
+
+No hand-written adapter methods, no `Collection<P,C>` vocabulary
+interface, no relation-equivalence syntax. Boxing a participant stamps
+out a vtable on demand whose getters read the label-mangled fields
+directly; unboxed use keeps DataDraw-grade zero overhead.
+
+### 11.4 Dict<K, V> — generic relations as partial-impl templates
+
+**The classes and the relation.** K and V are Dict's ordinary generic
+parameters; the relation line references them:
+
+```lyric
+class Dict<K, V> {
+    pub func set(self, key: K, value: V) {
+        let existing = hash_lookup(self, key.get_hash())
+        if !isnull(existing) { existing!.value = value; return }
+        hash_insert(self, DictEntry<K, V> { key: key, value: value })
+    }
+    pub func get(self, key: K) -> DictEntry<K, V>? {
+        return hash_lookup(self, key.get_hash())
+    }
+    pub func has(self, key: K) -> bool { return !isnull(self.get(key)) }
+}
+
+class DictEntry<K, V> {
+    key:   K
+    value: V
+    pub func hash_key(self) -> u64 { return self.key.get_hash() }
+}
+
+relation HashedList Dict<K, V>:d owns [DictEntry<K, V>:d]
+```
+
+**The desugar** (§7.4) — a generic named-impl template, which is
+exactly shipped 4w1-d machinery:
+
+```lyric
+impl<K, V> HashedList<Dict<K, V>:d, DictEntry<K, V>:d> owns
+    where Hashable<K> { }
+```
+
+The hint's abstract requirement (`C.hash_key(self) -> u64`) is checked
+**generically at the relation line**, under the propagated
+`Hashable<K>` constraint: `DictEntry.hash_key` exists and `K.get_hash`
+is licensed by the constraint. A bad fit is a hard diagnostic on the
+`relation` line — panic-don't-fallback, replacing today's silent skip.
+
+**Instantiation rides the ordinary monomorphization rails.** No
+textual injection layer, no type arguments smuggled below the type
+system:
+
+```lyric
+let counts = Dict<Sym, i32>()       // stamps impl<Sym, i32>: fields
+counts.set(`x`, 42)                 //   __d_children: [DictEntry_Sym_i32], …
+
+let weights = Dict<Sym, f64>()      // separate stamp: f64 values stored
+weights.set(`route7`, 0.25)         //   UNBOXED in the entry — this is why
+                                    //   flattening is forced, not preferred (§7.1)
+
+let index = Dict<Sym, Route>()      // class-typed V: the trusted-RC
+index.set(`r0`, r)                  //   machinery emits real ref/unref here,
+                                    //   and no-ops for the i32/f64 stamps —
+                                    //   a per-monomorphized-copy decision
+```
+
+Why the historical bug class is unrepresentable now: `Dict<K, V>`'s
+type arguments flow parser → checker → monomorphizer as ordinary
+generic-impl arguments. There is no per-relation textual expansion to
+lose them, so the six-layer `void*`/TypeArgs-propagation lineage (and
+the `classRenames` last-writer-wins bug) has no home to live in. Impl
+identity is the brand `:d`; a second Dict-shaped relation with a
+different label would be a second template with disjoint fields, and a
+concrete impl overlapping the template is a compile error at its
+declaration site (§7.4).
+
+### Acid test
+
+For implementation: rewrite `testdata/graph.ly` and `testdata/tree.ly`
+under this design; both must compile and run, with fewer user-written
+lines than under the previous design (see Falsifiable claims).
 
 ---
 
