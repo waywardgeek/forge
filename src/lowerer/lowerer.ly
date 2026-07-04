@@ -219,8 +219,11 @@ lyric lowerer {
           i = i + 1
         }
         // Special case: (T, error) → ErrorResult
-        if len(lfields) == 2 && !isnull(lfields[1].typ) && lfields[1].typ!.kind is TyError {
-          return LType { kind: TyErrorResult, name: "", elem: lfields[0].typ, bits: 0, is_exported: false }
+        if len(lfields) == 2 && !isnull(lfields[1].typ) {
+          let is_err = lfields[1].typ!.kind is TyError || (lfields[1].typ!.kind is TyClassHandle && lfields[1].typ!.name == "Error")
+          if is_err {
+            return LType { kind: TyErrorResult, name: "", elem: lfields[0].typ, bits: 0, is_exported: false }
+          }
         }
         // Also check by AST type name — "error" interface may resolve to TyAny
         if len(lfields) == 2 && len(fields) >= 2 {
@@ -296,7 +299,7 @@ lyric lowerer {
     if n == "f64" { return LType { kind: TyF64, name: "f64", bits: 64, is_exported: false } }
     if n == "bool" { return LType { kind: TyBool, name: "bool", bits: 0, is_exported: false } }
     if n == "string" { return LType { kind: TyString, name: "string", bits: 0, is_exported: false } }
-    if n == "error" { return LType { kind: TyError, name: "error", bits: 0, is_exported: false } }
+    if n == "error" { return LType { kind: TyClassHandle, name: "Error", bits: 0, is_exported: false } }
     if n == "any" { return LType { kind: TyAny, name: "", bits: 0, is_exported: false } }
     if n == "int" { return LType { kind: TyPlatformInt, name: "", bits: -1, is_exported: false } }
     if n == "uint" { return LType { kind: TyPlatformUint, name: "", bits: -1, is_exported: false } }
@@ -1297,7 +1300,7 @@ lyric lowerer {
         } else if !isnull(v) && v!.typ!.kind is TyErrorResult && i == 0 {
           v!.typ!.elem
         } else if !isnull(v) && v!.typ!.kind is TyErrorResult && i == 1 {
-          LType { kind: TyError, name: "", bits: 0, is_exported: false }
+          LType { kind: TyClassHandle, name: "Error", bits: 0, is_exported: false }
         } else {
           LType { kind: TyAny, name: "", bits: 0, is_exported: false }
         }
@@ -3573,7 +3576,7 @@ lyric lowerer {
     // Extract error
     let err_expr = LExpr {
       kind: ExExtractError,
-      typ: LType { kind: TyError, name: "error", bits: 0, is_exported: false },
+      typ: LType { kind: TyClassHandle, name: "Error", bits: 0, is_exported: false },
       extract_error: LExtractErrorData { value: v }
     }
     let err_val = self.emit_temp(err_expr)

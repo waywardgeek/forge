@@ -430,21 +430,20 @@ static inline lyric_string lyric_str_trim(lyric_string s) {
 })
 
 /* -------------------------------------------------------------------------
- * Error Results  —  {bool is_err; T value; lyric_string error}
+ * Error Results  —  {bool is_err; T value; LyricError error}
  * -------------------------------------------------------------------------
- * Error messages are lyric_string (length-prefixed byte slices).
- * A null error has .data == NULL && .len == 0.
+ * LyricError is typedef'd before this header is included:
+ *   SoA mode: typedef uint32_t LyricError;   (slab index)
+ *   AoS mode: typedef struct Error* LyricError;  (heap pointer)
+ * A null error is 0 (SoA) or NULL (AoS).
  */
 
 #define LYRIC_RESULT_DEF(ElemType, ResultName) \
-    typedef struct { bool is_err; ElemType value; lyric_string error; } ResultName;
+    typedef struct { bool is_err; ElemType value; LyricError error; } ResultName;
 
-#define lyric_ok(val, ResultName) ((ResultName){.is_err = false, .value = (val), .error = LYRIC_STR_EMPTY})
-#define lyric_err(msg, ResultName) ((ResultName){.is_err = true, .error = (msg)})
+#define lyric_ok(val, ResultName) ((ResultName){.is_err = false, .value = (val), .error = 0})
+#define lyric_err(err_handle, ResultName) ((ResultName){.is_err = true, .error = (err_handle)})
 #define lyric_is_err(r) ((r).is_err)
-
-/* Check if an error value is null (no error) */
-#define lyric_error_is_null(e) ((e).data == NULL)
 
 /* -------------------------------------------------------------------------
  * Channels (pthreads-based, buffered and unbuffered)

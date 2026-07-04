@@ -3,6 +3,33 @@
 
 lyric std {
 
+  // ErrorCode: absl-inspired error codes.
+  pub enum ErrorCode {
+    Ok
+    Cancelled
+    Unknown
+    InvalidArgument
+    DeadlineExceeded
+    NotFound
+    AlreadyExists
+    PermissionDenied
+    ResourceExhausted
+    FailedPrecondition
+    Aborted
+    OutOfRange
+    Unimplemented
+    Internal
+    Unavailable
+    DataLoss
+    Unauthenticated
+  }
+
+  // Error: the built-in error class. `error` in type position resolves to Error.
+  pub class Error {
+    msg: string
+    code: ErrorCode
+  }
+
   // ArrayList: array-backed parent-child relation.
   //   relation ArrayList Parent owns [Child]   — parent cascade-destroys children.
   //   relation ArrayList Parent refs [Child]   — parent unlinks but does NOT destroy.

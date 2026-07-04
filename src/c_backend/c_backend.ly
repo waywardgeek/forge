@@ -921,51 +921,55 @@ func CGen.emit_class_msg_data(self, v: LValue?, class_name: string) -> string {
   return f"{val}->msg"
 }
 
+// emit_error_alloc: allocate an Error class instance with given msg expression.
+// ErrorCode.Unknown = 2 (third variant in the enum).
+func CGen.emit_error_alloc(self, msg_expr: string) -> string {
+  if self.prog!.slab_mode_soa {
+    return f"({{ Error _e = _lyric_slab_alloc_Error(); _lyric_slab_Error.msg[_e] = {msg_expr}; _lyric_slab_Error.code[_e] = 2; _e; }})"
+  }
+  return f"({{ Error* _e = malloc(sizeof(Error)); _e->msg = {msg_expr}; _e->code = 2; _e; }})"
+}
+
 func CGen.emit_value_as_error(self, v: LValue?) -> string {
   if isnull(v) {
-    return "LYRIC_STR(\"<null>\")"
+    return self.emit_error_alloc("LYRIC_STR(\"<null>\")")
   }
   if v!.kind is ValLitString {
-    return f"LYRIC_STR(\"{escape_c(v!.str_val)}\")"
+    if v!.str_val == "" {
+      // Empty string error = null (no error)
+      return self.zero_value(LType { kind: TyClassHandle, name: "Error", bits: 0, is_exported: false })
+    }
+    return self.emit_error_alloc(f"LYRIC_STR(\"{escape_c(v!.str_val)}\")")
   }
-  // For error types, use directly (already lyric_string)
+  if v!.kind is ValLitNull {
+    return self.zero_value(LType { kind: TyClassHandle, name: "Error", bits: 0, is_exported: false })
+  }
+  // If already an Error class handle, pass through
   if v!.kind is ValTemp {
     let ty_entry = self.temp_types!.get(sym(f"{v!.temp_id}"))
     if !isnull(ty_entry) && !isnull(ty_entry!.value) {
+      if ty_entry!.value!.kind is TyClassHandle && ty_entry!.value!.name == "Error" {
+        return self.emit_value(v)
+      }
+      // Legacy TyError path (bootstrap)
       if ty_entry!.value!.kind is TyError {
         return self.emit_value(v)
-      }
-      if ty_entry!.value!.kind is TyClassHandle {
-        return self.emit_class_msg_data(v, ty_entry!.value!.name)
-      }
-    }
-  }
-  // Also check varTypes — multi-return destructuring creates VarDecls with _tN names
-  if v!.kind is ValTemp {
-    let var_name = f"_t{v!.temp_id}"
-    let vt_entry = self.var_types!.get(sym(var_name))
-    if !isnull(vt_entry) && !isnull(vt_entry!.value) {
-      if vt_entry!.value!.kind is TyError {
-        return self.emit_value(v)
-      }
-      if vt_entry!.value!.kind is TyClassHandle {
-        return self.emit_class_msg_data(v, vt_entry!.value!.name)
       }
     }
   }
   if v!.kind is ValVar {
     let ty_entry = self.var_types!.get(sym(v!.name))
     if !isnull(ty_entry) && !isnull(ty_entry!.value) {
+      if ty_entry!.value!.kind is TyClassHandle && ty_entry!.value!.name == "Error" {
+        return self.emit_value(v)
+      }
       if ty_entry!.value!.kind is TyError {
         return self.emit_value(v)
       }
-      if ty_entry!.value!.kind is TyClassHandle {
-        return self.emit_class_msg_data(v, ty_entry!.value!.name)
-      }
     }
   }
-  // Default: value is a lyric_string already
-  return self.emit_value(v)
+  // Value is a string expression — wrap in Error alloc
+  return self.emit_error_alloc(self.emit_value(v))
 }
 
 func CGen.emit_args(self, args: [LValue?]) -> string {
@@ -1224,6 +1228,14 @@ func CGen.printf_spec_and_arg(self, v: LValue?) -> (string, string) {
     TyBool => { return ("%s", f"lyric_bool_str({val})") }
     TyString => { return ("%.*s", f"(int){val}.len, (const char*){val}.data") }
     TyError => { return ("%.*s", f"(int){val}.len, (const char*){val}.data") }
+    TyClassHandle => {
+      if t!.name == "Error" {
+        let msg = self.emit_class_msg_data(v, "Error")
+        return ("%.*s", f"(int){msg}.len, (const char*){msg}.data")
+      }
+      let to_str = f"{t!.name}_to_string({val})"
+      return ("%.*s", f"(int){to_str}.len, (const char*){to_str}.data")
+    }
     TyTaggedUnion => {
       let to_str = f"{t!.name}_to_string({val})"
       return ("%.*s", f"(int){to_str}.len, (const char*){to_str}.data")
@@ -1834,9 +1846,9 @@ func CGen.emit_builtin(self, d: LBuiltinData?) -> string {
   }
   if name == "new_error" {
     if len(args) > 0 {
-      return self.emit_value(args[0])
+      return self.emit_error_alloc(self.emit_value(args[0]))
     }
-    return "LYRIC_STR_EMPTY"
+    return self.emit_error_alloc("LYRIC_STR_EMPTY")
   }
   if name == "new_dict" {
     return "/* new_dict */"
@@ -2233,9 +2245,9 @@ func CGen.emit_call_expr(self, e: LExpr?) -> string {
   }
   if name == "new_error" {
     if len(d.args) > 0 {
-      return self.emit_value(d.args[0])
+      return self.emit_error_alloc(self.emit_value(d.args[0]))
     }
-    return "LYRIC_STR_EMPTY"
+    return self.emit_error_alloc("LYRIC_STR_EMPTY")
   }
   let args_str = self.emit_args_boxed_mut(d.func_name, d.args, d.mut_args)
   return f"{name}({args_str})"
@@ -2671,7 +2683,7 @@ func CGen.emit_multi_assign(self, names: [string], types: [LType?], expr: LExpr?
   let expr_str = self.emit_expr_str(expr)
   let mut is_error_result = !isnull(expr) && !isnull(expr!.typ) && expr!.typ!.kind is TyErrorResult
   if !is_error_result && len(types) == 2 && !isnull(types[1]) {
-    let is_err = types[1]!.kind is TyError || types[1]!.kind is TyString
+    let is_err = types[1]!.kind is TyError || types[1]!.kind is TyString || (types[1]!.kind is TyClassHandle && types[1]!.name == "Error")
     if is_err {
       is_error_result = true
     }
@@ -2707,8 +2719,9 @@ func CGen.emit_multi_assign(self, names: [string], types: [LType?], expr: LExpr?
       self.var_types!.set(sym(names[0]), elem_type)
     }
     if names[1] != "_" {
-      self.line(f"lyric_string {names[1]} = {tmp_name}.error;")
-      self.var_types!.set(sym(names[1]), LType { kind: TyError, name: "", elem: null, key: null, fields: [], params: [], ret: null, variants: [], type_args: [], bits: 0, is_exported: false })
+      let err_type = self.c_type(LType { kind: TyClassHandle, name: "Error", bits: 0, is_exported: false })
+      self.line(f"{err_type} {names[1]} = {tmp_name}.error;")
+      self.var_types!.set(sym(names[1]), LType { kind: TyClassHandle, name: "Error", elem: null, key: null, fields: [], params: [], ret: null, variants: [], type_args: [], bits: 0, is_exported: false })
     }
   } else if len(names) == 2 && !isnull(expr) && !isnull(expr!.typ) && expr!.typ!.kind is TyTuple {
     let tmp_name = f"_multi_{self.next_temp()}"
@@ -5295,6 +5308,8 @@ pub func emit_c(prog: LProgram?) -> string {
   g.line("#include <string.h>")
   g.line("#include <stdarg.h>")
   g.line("#include <setjmp.h>")
+  // Forward-declare LyricError handle type before runtime header (needed for LYRIC_RESULT_DEF)
+  g.line("typedef uint32_t LyricError;")
   g.line("#include \"lyric_runtime.h\"")
   g.line("")
   // Test assertion macros
