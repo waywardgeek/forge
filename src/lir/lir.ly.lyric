@@ -90,6 +90,88 @@ module lir
     chains) representable without violating expression flattening.
     """
 
+  doc "Data Contract":
+    """
+    The lir module is a passive data-structure module: it defines the
+    contract that the lowerer must satisfy and the c_backend must
+    consume. It contains no transformation logic beyond
+    resolve_class_types(). The lowerer is the sole producer of
+    LProgram; the optimizer, monomorphizer, and memory pass mutate it
+    in-place; the c_backend is the sole consumer for code emission.
+    """
+
+  invariant "Structured Control Flow":
+    procedural
+    """
+    Unlike many IRs that use basic blocks and jumps, LIR preserves
+    structured control flow. LStmt variants StIf, StWhile, StFor,
+    StSwitch, and StTypeSwitch contain nested statement blocks
+    (then_body/else_body, body, cases), preserving the high-level
+    logic of the source program.
+
+    This makes LIR ideal for emitting C code: each structured
+    statement maps directly to C's block-structured syntax (if/else,
+    while, for, switch) without reconstructing structure from a CFG.
+
+    Concurrency primitives (StSpawn, StLock, StSend, StSelect) and
+    generators (StYield) are likewise block-structured, keeping the
+    backend simple.
+    """
+
+  invariant "Memory Management Primitives":
+    procedural
+    """
+    The memory pass injects explicit LIR primitives for Lyric's
+    memory management. These are first-class statements and
+    expressions, not hidden in library calls:
+
+    Slab allocation (replaces ExClassAlloc after the memory pass):
+    - ExSlabAlloc / ExSlabGet — allocate an object in a typed slab,
+      read a field from a slab-allocated object.
+    - StSlabSet / StSlabFree — write a field, free a slab slot.
+
+    Reference counting:
+    - StRefIncr / StRefDecr — increment/decrement the _rc field of a
+      class handle. When _rc drops to 0 and rc_free is enabled, the
+      object is freed.
+    - StSliceRetain — increment RC for a slice's backing store.
+    - StSliceRcRelease — release RC for every class-typed element in
+      a slice before freeing the slice itself.
+    - StSliceFree — free a slice's backing memory.
+
+    Ownership:
+    - is_owned on LType and LClassDecl marks classes that are
+      children in `owns` relations. Their lifetime is managed by the
+      parent's destructor, not by RC.
+    - is_permanent marks compiler-internal classes (~34 types like
+      AST/LIR/CGen nodes) that skip all RC instrumentation.
+    """
+
+  invariant "Type Resolution Contract":
+    procedural
+    """
+    resolve_class_types() on LProgram performs a mandatory post-
+    lowering (or post-monomorphization) pass that wires up every
+    LType node in the program with its corresponding LClassDecl.
+
+    The pass builds a Dict<Sym, LClassDecl> index from
+    LProgram.classes, then recursively walks:
+      - struct/class field types
+      - function params, return types, and receiver types
+      - all statements (resolve_stmts → resolve_stmt)
+      - all expressions (resolve_expr) and values (resolve_value)
+
+    For each LType with kind == TyClassHandle, it populates:
+      class_decl  → the LClassDecl definition
+      is_permanent → class_decl.is_permanent
+      is_owned     → class_decl.is_owned
+
+    Until this pass runs, class_decl is nil and is_permanent /
+    is_owned are false on all LType nodes. The memory pass and
+    c_backend depend on this metadata being populated — calling them
+    before resolve_class_types() produces incorrect output.
+    """
+
   invariant "Type System":
     procedural
     """
@@ -644,12 +726,13 @@ module lir
     field type_params: [LTypeParam]
 
   struct LRelationalConstraint
-    source: lir.ly:673
+    source: lir.ly:672
     field interface_name: string
     field type_args: [string]
 
   class LFuncDecl
-    source: lir.ly:678
+    source: lir.ly:677
+    why: "A function or method declaration. For methods, `receiver` names the receiver type and `receiver_type_params` carries its generic parameters. `class_rename_map` handles name mapping for monomorphized or renamed classes within the function's scope. `relational_constraints` encode ownership-style constraints (e.g. Iterator[T] requires Container[T]). The temp counter for expression flattening is per-function and resets on each LFuncDecl."
     field body: [LStmt?]
     field class_rename_map: Dict<Sym, string>?
     field is_exported: bool
@@ -664,13 +747,14 @@ module lir
     field type_params: [LTypeParam]
 
   class LTypeDef
-    source: lir.ly:693
+    source: lir.ly:692
     field is_exported: bool
     field name: string
     field typ: LType?
 
   class LProgram
-    source: lir.ly:699
+    source: lir.ly:698
+    why: "Root container for a compiled Lyric package. Holds all top-level declarations (structs, classes, enums, interfaces, functions, globals, type_defs) plus compiler flags that drive the backend: slab_mode/slab_mode_soa select AoS vs SoA slab allocation, detect_uaf enables use-after-free checking, rc_free enables freeing on RC drop to 0, unsafe_mode bypasses safety checks. class_renames and impl_method_renames handle monomorphization name mapping. owned_classes tracks classes subject to ownership rules."
     field class_renames: Dict<Sym, string>?
     field classes: [LClassDecl]
     field detect_uaf: bool

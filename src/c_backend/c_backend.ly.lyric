@@ -4,12 +4,21 @@ module c_backend
 
   doc "Architecture":
     """
+    Final stage of the Lyric compiler pipeline: translates monomorphized LIR
+    into GNU C11 source that links against lyric_runtime.h. Produces
+    deterministic output suitable for the fixed-point bootstrap test.
+
     Entry point: emit_c(prog: LProgram?) -> string. CGen class holds all
     generator state. Expression emission returns string; statement emission
     writes directly to the buffer. Type mapping is centralized in c_type(),
     which handles all LType→C type conversions. Composite types (slice/opt/
-    result/chan) are registered on first use. Interface dispatch uses vtables
-    indexed by named LTyAny names.
+    result/chan) are registered on first use via collect_composite_types,
+    which pre-scans the entire program before emission begins.
+
+    Interface dispatch uses vtables: each interface has a vtable struct of
+    function pointers, each implementing class gets a static vtable instance.
+    Interface values are emitted as structs with a void* _data pointer and a
+    pointer to the vtable.
 
     Emission order (dependency-safe):
       1. Forward declarations (all structs, classes, enums)
@@ -34,6 +43,15 @@ module c_backend
     checks for a destroy_ClassName function. --detect-uaf sets _rc =
     UINT32_MAX on free and emits poison checks on ExClassGet and
     ValClassFieldRef.
+
+    Concurrency: StSpawn hoists spawned blocks into top-level functions with
+    a heap-allocated context struct for captured variables. Channel ops
+    (send/receive/select) map to lyric_chan_send_*/lyric_chan_receive_*
+    runtime calls. Select is a polling loop that tries each case and sleeps
+    briefly if none is ready.
+
+    Technical debt: map types are stubs (not yet supported). Slice RC
+    retain is a no-op — slices rely on scope-exit freeing.
     """
 
   invariant "CGen State Lifecycle":
@@ -68,6 +86,16 @@ module c_backend
     NULL checks while still giving value types proper optional discipline.
     """
 
+  invariant "TyGenerator Must Not Reach c_type":
+    procedural
+    """
+    Reaching c_type with a TyGenerator is an invariant violation.
+    Generators must be handled by specific emitters (emit_for_stmt,
+    emit_generator_struct_decl, etc.) that derive the proper
+    {base}_gen_t* type via resolve_gen_base_name. c_type must panic
+    on TyGenerator — it is never a valid fallback path.
+    """
+
   invariant "Generator and Lambda Lowering":
     procedural
     """
@@ -75,7 +103,10 @@ module c_backend
     Generators emit a Duff's device state machine; gen_yield_count tracks
     the case labels needed. While inside a generator, in_generator is true
     and variable references are redirected to _gen->name so the state
-    machine's saved frame is visible across resumption.
+    machine's saved frame is visible across resumption. A {base}_gen_t
+    struct is generated holding local variables and a _state field. The
+    generator body is emitted as a switch that jumps to the appropriate
+    label; yield saves state and returns true, the next call resumes.
 
     Simple enums (all unit variants) emit a plain typedef enum rather than
     a tagged union — detected by is_simple_enum on each LEnumDecl.
@@ -114,6 +145,15 @@ module c_backend
     in emit_value matters for correctness.
     """
 
+  invariant "SoA Handle Slot Zero":
+    procedural
+    """
+    In SoA mode, handle slot 0 is deliberately wasted — valid handles
+    start at 1. This allows 0 to serve as a null/none sentinel for
+    optional class handles (uint32_t where 0 = none), mirroring AoS
+    mode's use of NULL pointers.
+    """
+
   invariant "Printf Format String Escaping":
     procedural
     """
@@ -122,8 +162,6 @@ module c_backend
     with format specs — it must use string concatenation to avoid double
     escaping by escape_printf (which would corrupt the resulting format).
     """
-
-
 
   class CGen
     source: c_backend.ly:7
@@ -165,196 +203,212 @@ module c_backend
     field tuple_types: Dict<Sym, string>?
     field var_types: Dict<Sym, LType?>?
     method line(self, s: string)
-      source: c_backend.ly:176
+      source: c_backend.ly:183
     method write_raw(self, s: string)
-      source: c_backend.ly:186
+      source: c_backend.ly:193
     method c_type(self, t: LType?) -> string
-      source: c_backend.ly:370
+      source: c_backend.ly:377
+      why: "Central authority for mapping Lyric types to C type strings. Primitives map to stdint.h types (TyI32 → int32_t). Class handles become pointers (AoS) or uint32_t (SoA). Optionals on class handles are raw pointers/handles (NULL/0 = none); non-class optionals use LyricOpt<T> tagged structs. Tuples become named structs (LyricTuple_N). TyGenerator reaching this method is an invariant violation — generators are handled by dedicated emitters."
     method c_field_decl(self, t: LType?, name: string) -> string
-      source: c_backend.ly:472
-    method c_return_type(self, t: LType?) -> string
       source: c_backend.ly:493
+    method c_return_type(self, t: LType?) -> string
+      source: c_backend.ly:514
     method c_tuple_type(self, t: LType?) -> string
-      source: c_backend.ly:500
+      source: c_backend.ly:521
     method slice_type_name(self, elem: LType?) -> string
-      source: c_backend.ly:539
+      source: c_backend.ly:560
     method opt_type_name(self, elem: LType?) -> string
-      source: c_backend.ly:550
+      source: c_backend.ly:571
     method result_type_name(self, elem: LType?) -> string
-      source: c_backend.ly:564
+      source: c_backend.ly:585
     method chan_suffix(self, elem: LType?) -> string
-      source: c_backend.ly:578
+      source: c_backend.ly:599
     method zero_value(self, t: LType?) -> string
-      source: c_backend.ly:593
+      source: c_backend.ly:614
     method is_class_optional(self, t: LType?) -> bool
-      source: c_backend.ly:643
+      source: c_backend.ly:664
     method resolve_class_name(self, name: string, caller: string) -> string
-      source: c_backend.ly:653
+      source: c_backend.ly:674
     method resolve_class_name_from_type(self, t: LType?, caller: string) -> string
-      source: c_backend.ly:658
+      source: c_backend.ly:679
     method is_rc_class(self, class_name: string) -> bool
-      source: c_backend.ly:670
+      source: c_backend.ly:691
+      why: "Name-based RC check: true if class is neither permanent nor owned, meaning it needs reference counting."
     method has_destroy_func(self, class_name: string) -> bool
-      source: c_backend.ly:684
+      source: c_backend.ly:705
+      why: "Checks if a destroy_ClassName function exists, used to determine if RC decrement to zero should call a destructor."
     method contains_type_var(self, t: LType?) -> bool
-      source: c_backend.ly:707
+      source: c_backend.ly:728
     method next_temp(self) -> i32
-      source: c_backend.ly:720
+      source: c_backend.ly:741
     method func_name(self, f: LFuncDecl) -> string
-      source: c_backend.ly:730
+      source: c_backend.ly:751
+      why: "Produces the mangled C name for a function: <receiver>_<name> for methods, bare <name> for free functions. Generator call-site mangling must agree with this (see Generator Call-Site Mangling invariant)."
     method c_param_list(self, f: LFuncDecl) -> string
-      source: c_backend.ly:740
+      source: c_backend.ly:761
     method is_generator_func(self, f: LFuncDecl) -> bool
-      source: c_backend.ly:772
+      source: c_backend.ly:793
     method emit_value(self, v: LValue?) -> string
-      source: c_backend.ly:780
+      source: c_backend.ly:801
+      why: "Emits an LValue as a C expression string. Order of redirection checks matters: in_generator redirects to _gen->name, spawn_captures redirects to (*_ctx->name), mut_params redirects to (*name)."
     method emit_class_msg_data(self, v: LValue?, class_name: string) -> string
-      source: c_backend.ly:872
+      source: c_backend.ly:893
     method emit_value_as_cstr(self, v: LValue?) -> string
-      source: c_backend.ly:881
+      source: c_backend.ly:902
     method emit_args(self, args: [LValue?]) -> string
-      source: c_backend.ly:927
+      source: c_backend.ly:948
     method emit_args_with_mut(self, args: [LValue?], mut_args: [bool]) -> string
-      source: c_backend.ly:940
-    method resolve_value_type(self, v: LValue?) -> LType?
       source: c_backend.ly:961
+    method resolve_value_type(self, v: LValue?) -> LType?
+      source: c_backend.ly:982
     method infer_lval_type(self, v: LValue?) -> LType?
-      source: c_backend.ly:983
+      source: c_backend.ly:1004
     method slice_type_name_from_value(self, v: LValue?) -> string
-      source: c_backend.ly:1027
+      source: c_backend.ly:1048
     method slice_type_name_from_type(self, t: LType?) -> string
-      source: c_backend.ly:1034
+      source: c_backend.ly:1055
     method opt_type_name_from_expr(self, e: LExpr?) -> string
-      source: c_backend.ly:1041
+      source: c_backend.ly:1062
     method result_type_name_from_expr(self, e: LExpr?) -> string
-      source: c_backend.ly:1053
+      source: c_backend.ly:1074
     method find_class_field(self, fields: [LField], name: string) -> LType?
-      source: c_backend.ly:1064
+      source: c_backend.ly:1085
     method resolve_field_type(self, owner_type: LType?, field: string) -> LType?
-      source: c_backend.ly:1077
+      source: c_backend.ly:1098
     method union_tag_for_type(self, t: LType?) -> string
-      source: c_backend.ly:1117
+      source: c_backend.ly:1139
     method c_wrap_union(self, expr: string, src_type: LType?) -> string
-      source: c_backend.ly:1132
+      source: c_backend.ly:1154
     method printf_spec_and_arg(self, v: LValue?) -> (string, string)
-      source: c_backend.ly:1155
+      source: c_backend.ly:1177
     method emit_fprint(self, stream: string, args: [LValue?], newline: bool) -> string
-      source: c_backend.ly:1195
+      source: c_backend.ly:1217
     method emit_println(self, args: [LValue?]) -> string
-      source: c_backend.ly:1269
+      source: c_backend.ly:1291
     method emit_printf(self, args: [LValue?]) -> string
-      source: c_backend.ly:1273
+      source: c_backend.ly:1295
     method emit_sprintf(self, args: [LValue?]) -> string
-      source: c_backend.ly:1293
+      source: c_backend.ly:1315
     method emit_format(self, d: LFormatData?) -> string
-      source: c_backend.ly:1313
+      source: c_backend.ly:1335
     method emit_builtin(self, d: LBuiltinData?) -> string
-      source: c_backend.ly:1349
+      source: c_backend.ly:1371
     method emit_expr_str(self, e: LExpr?) -> string
-      source: c_backend.ly:1806
+      source: c_backend.ly:1869
     method emit_call_expr(self, e: LExpr?) -> string
-      source: c_backend.ly:2059
-    method emit_method_call_expr(self, e: LExpr?) -> string
       source: c_backend.ly:2129
+      why: "Emits a free-function call. For generator functions, appends _init suffix. Mangling must agree with func_name and emit_method_call_expr."
+    method emit_method_call_expr(self, e: LExpr?) -> string
+      source: c_backend.ly:2205
+      why: "Emits a method call. For generator methods, appends _init suffix. Mangling must agree with func_name and emit_call_expr."
     method emit_class_alloc_expr(self, e: LExpr?) -> string
-      source: c_backend.ly:2183
+      source: c_backend.ly:2269
     method emit_struct_lit_expr(self, e: LExpr?) -> string
-      source: c_backend.ly:2221
+      source: c_backend.ly:2307
     method emit_bin_op_expr(self, e: LExpr?) -> string
-      source: c_backend.ly:2276
+      source: c_backend.ly:2362
     method emit_struct_field_expr(self, e: LExpr?) -> string
-      source: c_backend.ly:2319
+      source: c_backend.ly:2405
     method emit_variant_construct_expr(self, e: LExpr?) -> string
-      source: c_backend.ly:2347
+      source: c_backend.ly:2433
     method emit_func_lit_expr(self, e: LExpr?) -> string
-      source: c_backend.ly:2376
+      source: c_backend.ly:2462
     method is_gen_func_by_name(self, name: string) -> bool
-      source: c_backend.ly:2415
+      source: c_backend.ly:2501
     method emit_args_boxed(self, func_name: string, args: [LValue?]) -> string
-      source: c_backend.ly:2420
+      source: c_backend.ly:2506
     method emit_args_boxed_mut(self, func_name: string, args: [LValue?], mut_args: [bool]) -> string
-      source: c_backend.ly:2456
+      source: c_backend.ly:2542
     method resolve_concrete_class(self, v: LValue?) -> string
-      source: c_backend.ly:2494
+      source: c_backend.ly:2580
     method emit_side_effect(self, e: LExpr?) -> string
-      source: c_backend.ly:2512
+      source: c_backend.ly:2598
     method emit_multi_assign(self, names: [string], types: [LType?], expr: LExpr?)
-      source: c_backend.ly:2546
+      source: c_backend.ly:2632
     method emit_element_rc_release(self, elem_expr: string, typ: LType?)
-      source: c_backend.ly:2630
+      source: c_backend.ly:2716
     method emit_stmts(self, stmts: [LStmt?])
-      source: c_backend.ly:2672
+      source: c_backend.ly:2758
     method emit_stmt(self, s: LStmt?)
-      source: c_backend.ly:2680
+      source: c_backend.ly:2766
       why: "Central LIR statement dispatcher — every emitted line of C ultimately flows through here. Composes with in_generator, mut_params, and spawn_captures to redirect variable references; ordering of those checks in emit_value (called from here) is load-bearing for correctness."
     method emit_return_stmt(self, s: LStmt?)
-      source: c_backend.ly:3131
+      source: c_backend.ly:3232
     method emit_for_stmt(self, s: LStmt?)
-      source: c_backend.ly:3223
+      source: c_backend.ly:3331
+      why: "Emits for-loops. Generator-backed loops emit iterator init, a while-loop calling _next, and cleanup. Uses resolve_gen_base_name to derive the generator type."
     method emit_switch_stmt(self, s: LStmt?)
-      source: c_backend.ly:3258
+      source: c_backend.ly:3366
     method emit_type_switch_stmt(self, s: LStmt?)
-      source: c_backend.ly:3288
+      source: c_backend.ly:3396
     method resolve_tag_constant(self, d: LTypeSwitchData, case_type: LType?) -> string
-      source: c_backend.ly:3321
+      source: c_backend.ly:3429
     method resolve_gen_base_name(self, v: LValue?) -> string
-      source: c_backend.ly:3348
+      source: c_backend.ly:3468
+      why: "Resolves the base C function name for a generator from its collection value. Must panic on failure — returning a sentinel like 'unknown_gen' is forbidden. The resolved name must match the mangling produced by func_name for the same function."
     method find_gen_func_name_in_stmts(self, stmts: [LStmt?], temp_id: i32) -> string
-      source: c_backend.ly:3355
+      source: c_backend.ly:3485
     method extract_func_name_from_expr(self, e: LExpr?) -> string
-      source: c_backend.ly:3403
+      source: c_backend.ly:3540
+      why: "Extracts the mangled C function name from an ExCall or ExMethodCall expression. Must reproduce the same mangling as func_name for generator call-site matching."
     method collect_gen_vars(self, stmts: [LStmt?]) -> [LVarDeclData]
-      source: c_backend.ly:3415
+      source: c_backend.ly:3585
     method count_yields(self, stmts: [LStmt?]) -> i32
-      source: c_backend.ly:3475
+      source: c_backend.ly:3645
     method emit_generator_struct_decl(self, f: LFuncDecl)
-      source: c_backend.ly:3504
+      source: c_backend.ly:3674
+      why: "Emits the {base}_gen_t struct holding generator state: local variables (via collect_gen_vars) and a _state field for Duff's device dispatch."
     method emit_generator_forward_decls(self, f: LFuncDecl)
-      source: c_backend.ly:3534
+      source: c_backend.ly:3704
     method emit_generator_func_decl(self, f: LFuncDecl)
-      source: c_backend.ly:3542
-    method infer_expr_type(self, e: LExpr?) -> LType?
-      source: c_backend.ly:3607
-    method to_string_expr(self, v: LValue?) -> string
       source: c_backend.ly:3712
+      why: "Emits the generator _init and _next functions. _init allocates the gen_t struct. _next uses a Duff's device switch on _state to resume; yield saves state and returns true."
+    method infer_expr_type(self, e: LExpr?) -> LType?
+      source: c_backend.ly:3777
+    method to_string_expr(self, v: LValue?) -> string
+      source: c_backend.ly:3883
     method eq_expr(self, a: LValue?, b: LValue?) -> string
-      source: c_backend.ly:3737
+      source: c_backend.ly:3908
     method resolve_type_name(self, name: string) -> string
-      source: c_backend.ly:3755
+      source: c_backend.ly:3926
     method field_to_string_expr(self, t: LType?, val: string) -> string
-      source: c_backend.ly:3765
+      source: c_backend.ly:3937
+      why: "Converts a typed field value to a C string expression. Must use string concatenation, NOT f-strings with format specs, to avoid double-escaping by escape_printf."
     method collect_composite_types(self)
-      source: c_backend.ly:3983
+      source: c_backend.ly:4155
+      why: "Pre-scans the entire LProgram to discover and register all composite types (slices, optionals, results, channels, tuples) before emission begins. Ensures type definitions are emitted before first use."
     method walk_type_for_composite(self, t: LType?)
-      source: c_backend.ly:4034
+      source: c_backend.ly:4206
     method walk_val_for_composite(self, v: LValue?)
-      source: c_backend.ly:4073
+      source: c_backend.ly:4245
     method walk_expr_for_composite(self, e: LExpr?)
-      source: c_backend.ly:4079
+      source: c_backend.ly:4251
     method walk_stmts_for_composite(self, stmts: [LStmt?])
-      source: c_backend.ly:4121
+      source: c_backend.ly:4293
     method emit_struct_decl(self, s: LStructDecl)
-      source: c_backend.ly:4222
+      source: c_backend.ly:4394
     method emit_class_decl(self, c: LClassDecl)
-      source: c_backend.ly:4238
+      source: c_backend.ly:4410
     method emit_slab_infrastructure(self, classes: [LClassDecl])
-      source: c_backend.ly:4274
+      source: c_backend.ly:4446
+      why: "Emits block-based slab allocator for AoS mode: per-class alloc/free functions, free-list via lyric_next pointer, destroy function for RC classes, and LYRIC_SLAB_BLOCK=256 block allocation."
     method emit_slab_infrastructure_soa(self, classes: [LClassDecl])
-      source: c_backend.ly:4359
+      source: c_backend.ly:4531
+      why: "Emits Structure-of-Arrays slab allocator: parallel arrays per field with uint32_t handles. Slot 0 is wasted so 0 can serve as a null sentinel for optional handles. Per-class alloc/free/grow functions."
     method emit_simple_enum_decl(self, e: LEnumDecl)
-      source: c_backend.ly:4467
+      source: c_backend.ly:4639
     method emit_enum_decl(self, e: LEnumDecl)
-      source: c_backend.ly:4482
+      source: c_backend.ly:4654
     method emit_func_forward_decl(self, f: LFuncDecl)
-      source: c_backend.ly:4539
+      source: c_backend.ly:4711
     method emit_func_decl(self, f: LFuncDecl)
-      source: c_backend.ly:4551
+      source: c_backend.ly:4723
     method emit_to_string_functions(self)
-      source: c_backend.ly:4590
+      source: c_backend.ly:4762
     method emit_field_dump_to_string(self, type_name: string, fields: [LField], prefix: string, suffix: string)
-      source: c_backend.ly:4714
+      source: c_backend.ly:4886
     method emit_os_helpers(self)
-      source: c_backend.ly:4739
+      source: c_backend.ly:4911
 
   struct CLambda
     source: c_backend.ly:69
@@ -376,75 +430,81 @@ module c_backend
 
   func new_cgen(prog: LProgram?) -> CGen?
     source: c_backend.ly:87
+    why: "Creates a new CGen instance with all registries and buffers initialized. Called once per compilation by emit_c."
 
   func is_c_reserved(name: string) -> bool
-    source: c_backend.ly:194
+    source: c_backend.ly:201
 
   func c_safe_name(name: string) -> string
-    source: c_backend.ly:232
-
-  func sanitize_c_type_name(s: string) -> string
     source: c_backend.ly:239
 
+  func sanitize_c_type_name(s: string) -> string
+    source: c_backend.ly:246
+
   func lc_first(s: string) -> string
-    source: c_backend.ly:262
+    source: c_backend.ly:269
 
   func escape_c(s: string) -> string
-    source: c_backend.ly:277
+    source: c_backend.ly:284
 
   func escape_printf(s: string) -> string
-    source: c_backend.ly:315
+    source: c_backend.ly:322
+    why: "Doubles % chars in literal text for C printf format strings. Must not be combined with f-string format specs — see Printf Format String Escaping invariant."
 
   func c_bin_op(op: LBinOpKind) -> string
-    source: c_backend.ly:335
+    source: c_backend.ly:342
 
   func c_un_op(op: LUnOpKind) -> string
-    source: c_backend.ly:358
+    source: c_backend.ly:365
 
   func is_simple_enum(e: LEnumDecl) -> bool
-    source: c_backend.ly:628
+    source: c_backend.ly:649
+    why: "Returns true if all variants are unit (no payload), meaning the enum can be emitted as a plain C typedef enum instead of a tagged union."
 
   func dedup_structs(items: [LStructDecl]) -> [LStructDecl]
-    source: c_backend.ly:3799
+    source: c_backend.ly:3971
 
   func dedup_classes(items: [LClassDecl]) -> [LClassDecl]
-    source: c_backend.ly:3814
+    source: c_backend.ly:3986
 
   func dedup_enums(items: [LEnumDecl]) -> [LEnumDecl]
-    source: c_backend.ly:3829
+    source: c_backend.ly:4001
 
   func dedup_funcs(items: [LFuncDecl]) -> [LFuncDecl]
-    source: c_backend.ly:3844
+    source: c_backend.ly:4016
 
   func struct_type_name(t: LType?) -> string
-    source: c_backend.ly:3867
+    source: c_backend.ly:4039
 
   func topo_sort_structs(structs: [LStructDecl]) -> [LStructDecl]
-    source: c_backend.ly:3873
+    source: c_backend.ly:4045
+    why: "Topologically sorts struct declarations via Kahn's algorithm so nested structs are defined before their containers, avoiding incomplete-type C errors."
 
   func str_to_lower(s: string) -> string
-    source: c_backend.ly:3964
+    source: c_backend.ly:4136
 
   func collect_val_vars(v: LValue?, used: Dict<Sym, bool>?)
-    source: c_backend.ly:4811
+    source: c_backend.ly:4983
 
   func collect_expr_vars(e: LExpr?, used: Dict<Sym, bool>?)
-    source: c_backend.ly:4818
+    source: c_backend.ly:4990
 
   func collect_used_vars_stmts(stmts: [LStmt?], used: Dict<Sym, bool>?)
-    source: c_backend.ly:4899
+    source: c_backend.ly:5071
 
   func collect_used_vars(stmts: [LStmt?]) -> Dict<Sym, bool>?
-    source: c_backend.ly:4998
+    source: c_backend.ly:5170
 
   func collect_declared_vars_stmts(stmts: [LStmt?], decl: Dict<Sym, bool>?)
-    source: c_backend.ly:5004
+    source: c_backend.ly:5176
 
   func collect_declared_vars(stmts: [LStmt?]) -> Dict<Sym, bool>?
-    source: c_backend.ly:5045
+    source: c_backend.ly:5217
 
   func emit_c(prog: LProgram?) -> string
-    source: c_backend.ly:5055
+    source: c_backend.ly:5227
+    why: "Primary entry point. Transforms a monomorphized LIR program into a complete C11 source string. Creates a CGen instance, pre-scans for composite types, emits declarations and definitions in dependency-safe order. The generated code links against lyric_runtime.h."
 
   func emit_test_runner(test_funcs: [string]) -> string
-    source: c_backend.ly:5511
+    source: c_backend.ly:5686
+    why: "Generates a C main function that runs a suite of test functions with pass/fail reporting."

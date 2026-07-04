@@ -5,6 +5,15 @@ module optimizer
   doc "Architecture":
     """
     The optimizer runs as a sequence of LIR→LIR passes on each function body.
+    It operates on an LProgram (defined in src/lir) and is deeply coupled
+    with the LIR data structures, performing direct tree-walking and mutation
+    on LStmt, LExpr, and LValue nodes.
+
+    Public API:
+      - optimize(prog: LProgram): main entry point, mutates the LProgram
+        in-place by optimizing the bodies of all functions and methods.
+      - optimize_func(mut fn: LFuncDecl): performs the full optimization
+        pipeline on a single function declaration.
 
     Structural transforms (run in order, BEFORE elimination):
       1. fuse_side_effect_temps: collapse void-context builtin calls bound
@@ -54,8 +63,12 @@ module optimizer
     collect_used_var_names_in_* family MUST visit every variant of LStmt,
     LExpr, and LValue. Any missed variant silently drops a live reference,
     causing eliminate_unused_temps to delete a temp that is still read —
-    producing miscompiled output rather than a verifier error. Recursive
-    descent into nested blocks (if/else, for, while, match) is mandatory.
+    producing miscompiled output rather than a verifier error.
+
+    Recursive descent into ALL nested block structures is mandatory:
+    if/else, while, for, switch, type_switch, block, defer, spawn, lock,
+    and select. Each must be explicitly handled — there is no generic
+    "visit children" helper.
     """
 
   invariant "Side-Effect Safety on Elimination":
@@ -102,6 +115,34 @@ module optimizer
     and get incorrectly eliminated.
     """
 
+  invariant "Multi-Pass Elimination":
+    procedural
+    """
+    The elimination phase re-collects live sets after each round of
+    deletion to catch names freed by the previous pass. For example,
+    removing a VarDecl whose RHS was the sole consumer of a temporary
+    makes that temporary now unused. Without re-collection, such
+    transitively-dead temps survive into the backend as unnecessary
+    stores. Each round of eliminate_unused_temps_recursive MUST be
+    followed by a fresh collect_used_temps / collect_used_var_names
+    walk before the next round begins.
+    """
+
+  doc "Technical Debt and Future Work":
+    """
+    - Data-Flow Analysis: The current implementation is primarily structural
+      and local. A more sophisticated data-flow analysis pass would enable
+      constant folding, common subexpression elimination, and better range
+      index coercion.
+    - Optimization Stubs: Several placeholders exist for future optimizations
+      (coerceForRangeIndex, rewriteAppendReassign). Some are currently
+      handled by the lowerer or c_backend but may move here as the language
+      evolves.
+    - Iterative Fixed-Point: As transformations grow more complex, a formal
+      iterative fixed-point approach for elimination and transformation may
+      be required to ensure all possible optimizations are applied.
+    """
+
   func optimize(prog: LProgram)
     source: optimizer.ly:8
 
@@ -118,58 +159,58 @@ module optimizer
     source: optimizer.ly:128
 
   func destructure_multi_return(stmts: [LStmt?]) -> [LStmt?]
-    source: optimizer.ly:166
+    source: optimizer.ly:180
 
   func destructure_extract_pairs(stmts: [LStmt?]) -> [LStmt?]
-    source: optimizer.ly:228
+    source: optimizer.ly:242
 
   func fix_nil_zero_values(stmts: [LStmt?]) -> [LStmt?]
-    source: optimizer.ly:376
+    source: optimizer.ly:390
 
   func zero_value_for_type(t: LType) -> LValue?
-    source: optimizer.ly:397
+    source: optimizer.ly:411
 
   func optimize_nested_stmts_structural(s: LStmt, return_type: LType?)
-    source: optimizer.ly:424
+    source: optimizer.ly:438
 
   func eliminate_unused_temps(stmts: [LStmt?], used_temps: Dict<Sym, bool>) -> [LStmt?]
-    source: optimizer.ly:514
+    source: optimizer.ly:528
 
   func is_numeric_str(s: string) -> bool
-    source: optimizer.ly:570
+    source: optimizer.ly:584
 
   func parse_temp_id(name: string) -> i32
-    source: optimizer.ly:583
+    source: optimizer.ly:597
 
   func eliminate_unused_temps_recursive(stmts: [LStmt?], used_temps: Dict<Sym, bool>, used_vars: Dict<Sym, bool>) -> [LStmt?]
-    source: optimizer.ly:598
+    source: optimizer.ly:612
 
   func blank_unused_multi_assign_names(stmts: [LStmt?], used_temps: Dict<Sym, bool>, used_vars: Dict<Sym, bool>)
-    source: optimizer.ly:703
+    source: optimizer.ly:717
 
   func recurse_blank_unused(stmt: LStmt, used_temps: Dict<Sym, bool>, used_vars: Dict<Sym, bool>)
-    source: optimizer.ly:736
+    source: optimizer.ly:750
 
   func collect_used_temps(stmts: [LStmt?], used: Dict<Sym, bool>)
-    source: optimizer.ly:824
+    source: optimizer.ly:838
 
   func collect_used_temps_in_stmt(s: LStmt, used: Dict<Sym, bool>)
-    source: optimizer.ly:832
+    source: optimizer.ly:846
 
   func collect_used_temps_in_expr(e: LExpr, used: Dict<Sym, bool>)
-    source: optimizer.ly:988
+    source: optimizer.ly:1002
 
   func collect_used_temps_in_value(v: LValue, used: Dict<Sym, bool>)
-    source: optimizer.ly:1176
+    source: optimizer.ly:1190
 
   func collect_used_var_names(stmts: [LStmt?], used: Dict<Sym, bool>)
-    source: optimizer.ly:1194
+    source: optimizer.ly:1208
 
   func collect_used_var_names_in_stmt(s: LStmt, used: Dict<Sym, bool>)
-    source: optimizer.ly:1202
+    source: optimizer.ly:1216
 
   func collect_used_var_names_in_expr(e: LExpr, used: Dict<Sym, bool>)
-    source: optimizer.ly:1352
+    source: optimizer.ly:1366
 
   func collect_used_var_names_in_value(v: LValue, used: Dict<Sym, bool>)
-    source: optimizer.ly:1540
+    source: optimizer.ly:1554

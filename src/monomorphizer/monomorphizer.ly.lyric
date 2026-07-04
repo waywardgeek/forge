@@ -47,6 +47,76 @@ module monomorphizer
     that no LTyTypeVar survives anywhere.
     """
 
+  doc "Pipeline Position":
+    """
+    The monomorphizer sits between the lowerer and the c_backend in the
+    compiler pipeline. It operates exclusively on the Low-level
+    Intermediate Representation (LIR). The lowerer produces an LProgram
+    that may still contain generic (type-parameterized) declarations; the
+    monomorphizer transforms it into a fully concrete LProgram that the
+    c_backend can emit as C11 code. Since C11 has no native generics
+    support, this pass is mandatory — skipping it would leave
+    LTyTypeVar nodes that the C emitter cannot translate.
+    """
+
+  doc "Deep Cloning and Type Substitution":
+    """
+    Specialization works by deep-cloning LIR structures and applying
+    type substitution during the clone. The key functions form a layered
+    system:
+
+    subst_type: recursively traverses a type tree, replacing every
+    LTyTypeVar with the concrete type from a substitution dictionary.
+    This is pure type-level rewriting.
+
+    clone_stmts / clone_stmt / clone_expr / clone_value: create entirely
+    new copies of LIR statement and expression trees. During cloning,
+    every embedded type annotation is passed through subst_type, so the
+    resulting clone has all type variables "baked in" with their concrete
+    bindings. This produces a fully independent copy — mutations to the
+    clone do not affect the original generic declaration.
+
+    subst_type_remove_vars (Phase 5): a variant of subst_type used AFTER
+    specialization. It walks remaining func signatures and field types,
+    replacing surviving TyTypeVar references with concrete types AND
+    mangling generic class/struct names to their specialized forms
+    (e.g. Dict<string> → Dict_string). This bridges the gap between
+    the cloned bodies (which were substituted during cloning) and the
+    declaration-level types (which were not).
+    """
+
+  doc "State Management":
+    """
+    The MonoPass class manages the complex state of monomorphization
+    through several families of coordinated dictionaries:
+
+    Instance tracking (*_instances): Dict<Sym, string> maps keyed by
+    "name|type_key" composite keys that map to mangled specialized names.
+    Separate dictionaries exist for funcs, classes, and structs.
+
+    Type argument storage (*_inst_types): Dict<Sym, LType?> stores the
+    concrete type arguments associated with each instantiation, keyed
+    the same way. These drive the substitution dictionaries passed to
+    clone/subst_type during specialization.
+
+    Instance counts (*_inst_count): Dict<Sym, i32> tracks how many
+    instantiations exist for each base name, used by the fixpoint loop
+    (Phase 2) to detect whether the instantiation set grew.
+
+    Instance name lists (*_inst_names): ordered lists of "name|type_key"
+    strings that record discovery order, ensuring deterministic iteration
+    during specialization.
+
+    Rename maps (class_renames, current_class_rename_map): track the
+    mapping from generic names to specialized names. class_renames is
+    global (last-writer-wins); current_class_rename_map is rebuilt
+    per-function for correct per-specialization resolution.
+
+    Indexes (*_by_name, methods_by_class): Dict lookups for rapid access
+    to original declarations and their associated methods, built once
+    during initialization and read throughout all phases.
+    """
+
   invariant "No TyTypeVar After Mono":
     procedural
     """
@@ -116,6 +186,20 @@ module monomorphizer
     before walking its body, so LTyClass / alloc / cast references inside
     the function resolve to THIS specialization rather than whichever one
     happened to be written into the global map last.
+    """
+
+  invariant "Deep Clone Isolation":
+    procedural
+    """
+    clone_stmts / clone_stmt / clone_expr / clone_value MUST produce
+    entirely independent LIR trees — no shared mutable nodes between the
+    original generic declaration and the specialized copy. This is
+    critical because Phase 2 may specialize the same generic declaration
+    at multiple distinct type-arg tuples. If clones shared structure,
+    substituting types for one specialization would corrupt another.
+    Every LIR node (statement, expression, value, type) is freshly
+    allocated during cloning, with subst_type applied to every embedded
+    type annotation at construction time.
     """
 
   class MonoPass
