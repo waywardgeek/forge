@@ -40,5 +40,13 @@ lyric iface_single_test {
     // Variable initialization boxing
     let p: Printable = d
     assert_eq(p.to_string(), "Rex", "interface variable boxing")
+
+    // Return boxing
+    assert_eq(make_printable().to_string(), "Rex", "return boxing")
+  }
+
+  func make_printable() -> Printable {
+    let d = Dog { name: "Rex" }
+    return d
   }
 }

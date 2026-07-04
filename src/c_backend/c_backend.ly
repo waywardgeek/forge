@@ -5359,6 +5359,19 @@ pub func emit_c(prog: LProgram?) -> string {
     g.line("")
   }
 
+  // Forward-declare single-param interface struct types
+  // (must come before LYRIC_SLICE_DEF so [Printable] slices compile)
+  let fwd_ifaces = prog_ref.interfaces
+  i = 0
+  while i < len(fwd_ifaces) {
+    if len(fwd_ifaces[i].type_params) <= 1 {
+      let if_name = fwd_ifaces[i].name
+      g.line(f"typedef struct {if_name} {if_name};")
+    }
+    i = i + 1
+  }
+  g.line("")
+
   // Emit slice typedefs
   let slice_keys = g.slice_types!.keys()
   i = 0
