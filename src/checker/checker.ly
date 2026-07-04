@@ -659,14 +659,20 @@ lyric checker {
     }
 
     // Interface satisfaction: class assignable to interface it implements
+    // or structurally satisfies (all abstract methods present).
     match to.kind {
       Interface(iface_name) => {
         let src_name = type_name(src)
         if src_name != "" {
           let info = self.registry.lookup(src_name)
           if info != null {
+            // Check explicit implements list first
             for iname in info!.implements_list {
               if iname == iface_name { return true }
+            }
+            // Structural satisfaction: check if class has all abstract methods
+            if self.check_structural_satisfaction(src_name, iface_name) {
+              return true
             }
           }
         }
@@ -1170,6 +1176,19 @@ lyric checker {
       }
       Unit => {
         return make_void_type()
+      }
+      QualifiedType(base, member) => {
+        // X.Y in type position. Check if X is a known interface.
+        let base_name = sym_to_string(base)
+        let iface_entry = self.iface_decls.get(base)
+        if iface_entry != null {
+          // Interface family member type — resolve to Interface type.
+          // For single-param interfaces, bare Iface.T and Iface are equivalent.
+          return Type { kind: TypeKind.Interface(base_name), bits: 0, type_args: [] }
+        }
+        // Not an interface — try as dotted name (module.Type or enum.Variant)
+        let dotted = base_name + "." + sym_to_string(member)
+        return self.resolve_named_type(dotted, [], te.span)
       }
     }
     // All TypeExprKind variants handled above — this is unreachable
@@ -5452,6 +5471,35 @@ lyric checker {
   //
   // We accumulate ALL misses for an impl into ONE diagnostic.
   // =====================================================================
+
+  // check_structural_satisfaction: does a class have all abstract methods
+  // that an interface requires? Used by is_assignable for lazy satisfaction.
+  // Returns true if the class structurally satisfies the interface.
+  func Checker.check_structural_satisfaction(self, class_name: string, iface_name: string) -> bool {
+    let iface_entry = self.iface_decls.get(sym(iface_name))
+    if isnull(iface_entry) { return false }
+    let iface = iface_entry!.value
+    // Only support single-param interfaces for now (Phase 1)
+    let itp = iface.itp.children()
+    if len(itp) > 1 { return false }
+    // Get class methods from registry
+    let info = self.registry.lookup(class_name)
+    if info == null { return false }
+    // Check each abstract method in the interface
+    let imethods = iface.im.children()
+    for mi in range(0, len(imethods)) {
+      let m = imethods[mi]
+      if !isnull(m.body) { continue }  // default method — satisfied
+      if m.name == null { continue }
+      if m.is_synthesized { continue }  // generated getters/setters
+      let mname = sym_to_string(m.name!)
+      // Check if class has a method with this name
+      if !info!.methods.has(sym(mname)) {
+        return false
+      }
+    }
+    return true
+  }
 
   func Checker.validate_impl_satisfies_abstract(self, file: File) {
     // Pre-build a class-name -> ClassDecl map across all blocks so we
