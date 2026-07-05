@@ -191,6 +191,27 @@ module parser
     (exhaustiveness, type compatibility) happens in the checker.
     """
 
+  invariant "QualifiedType Parsing":
+    procedural
+    """
+    When parse_base_type encounters `Ident.Ident` in type position
+    (e.g. `DirectedGraph.G`, `io.Reader`), it emits a
+    QualifiedType(base, member) AST node and returns immediately.
+
+    Key design points:
+      - Generic args on qualified types (`X.Y<Z>`) are NOT supported.
+        The early return after emitting QualifiedType precedes the
+        generic-argument parsing loop, so `<` after a dotted name is
+        treated as a comparison operator, not a type parameter list.
+      - The parser does NOT resolve what a QualifiedType means. It
+        could be an interface family member (Iface.Member), a module-
+        qualified type (pkg.Type), or an enum variant. That semantic
+        resolution is the checker's responsibility — it may lower
+        QualifiedType to InterfaceType or a resolved Named type.
+      - Only single-dot paths are supported (X.Y). Multi-segment
+        paths (X.Y.Z) are not parsed as a single type expression.
+    """
+
   doc "Dependencies":
     """
     Strictly hierarchical dependency profile:
@@ -388,6 +409,7 @@ module parser
       source: parser.ly:1207
     method parse_base_type(self) -> (TypeExpr?, error)
       source: parser.ly:1259
+      why: "Handles primitive types, named types with generic args, and dotted qualified types (X.Y). When a dot follows an identifier in type position, emits QualifiedType(base, member) and returns immediately — generic args on qualified types (X.Y<Z>) are intentionally unsupported. The checker resolves whether the QualifiedType refers to an interface family member, a module-qualified type, or an enum variant."
 
   func new_parser(src_text: string, filename: string) -> Parser
     source: parser.ly:20

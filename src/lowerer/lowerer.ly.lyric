@@ -283,6 +283,76 @@ module lowerer
     concrete types specified in the impl block.
     """
 
+  invariant "TyInterfaceRef Emission and member_name Preservation":
+    procedural
+    """
+    Interface-typed expressions lower to LType with kind=TyInterfaceRef.
+    There are two source paths in lower_type():
+
+    1. QualifiedType(base, member) — emitted by the checker for
+       multi-param interface member references (e.g. DirectedGraph.N).
+       This path PRESERVES member_name on the LType, which is required
+       for the backend to generate correct per-family-member vtable
+       dispatch.
+
+    2. lower_named_type bare-name lookup — for single-param interfaces
+       (e.g. `Hashable`), the interface name alone resolves to
+       TyInterfaceRef with no member_name (erased fat pointer).
+
+    Multi-param interfaces referenced by bare name fall through to
+    TyAny, forcing callers to use qualified syntax.
+
+    Additionally, dotted-string names (e.g. "DirectedGraph.N" from
+    stringified qualified references) are caught by the dot_pos split
+    at the bottom of lower_named_type and produce TyInterfaceRef with
+    member_name set.
+    """
+
+  invariant "InterfaceType Dead Code Path (Phase 3 Prep)":
+    procedural
+    """
+    The InterfaceType(iface_name, member_name, brand) branch in
+    lower_type() is currently DEAD CODE — no checker pass or AST
+    producer emits InterfaceType nodes today. The branch maps to
+    TyInterfaceRef but DROPS both member_name and brand fields.
+
+    Phase 3 MUST fix this before wiring up any pass that produces
+    InterfaceType AST nodes: the member_name must be preserved on
+    the LType (as QualifiedType already does), and brand handling
+    must be designed. Activating this path without the fix would
+    silently lose interface family member identity, causing incorrect
+    vtable lookups at runtime.
+    """
+
+  invariant "family_params and is_erased Population":
+    procedural
+    """
+    lower_interface_decl populates two fields on LInterfaceDecl that
+    drive downstream vtable/monomorphization decisions:
+
+    - is_erased: true when the interface has NO field declarations
+      (method-only). Field-bearing interfaces (is_erased=false) are
+      monomorphized, not erased. Checked via id!.ifd.children() length.
+
+    - family_params: the subset of type_params that appear as
+      receiver_type on at least one method. These identify the "family
+      members" in multi-param interfaces (e.g. in DirectedGraph<N, E>,
+      both N and E if methods receive them). Populated by scanning
+      method receiver_types and intersecting with the type param list.
+
+    Single-param gate: lower_named_type uses a len(itp) <= 1 check
+    to decide whether a bare interface name becomes TyInterfaceRef
+    (single-param, erased) or TyAny (multi-param, requires qualified
+    syntax). This is a TYPE LOWERING gate — separate from the
+    family_params classification.
+
+    Bootstrap compatibility: the per-family-member vtable code in
+    lower_file uses len(iface.family_params) > 1, which evaluates to
+    false when family_params is empty (old binary that doesn't populate
+    it), keeping the existing single-vtable-per-interface behavior until
+    the new binary is bootstrapped.
+    """
+
   doc "Technical Debt":
     """
     Known areas for future improvement:

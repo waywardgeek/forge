@@ -146,7 +146,7 @@ module ast
     PatternKind enum: Ident, Literal, Variant, Wildcard, Tuple.
 
     TypeExprKind enum: Named, Optional, Union, Sequence, Map, Tuple, Func,
-    Channel, Lock, Unit.
+    Channel, Generator, Lock, Unit, QualifiedType, InterfaceType.
     """
 
   invariant "Relations":
@@ -190,7 +190,7 @@ module ast
     field end: Pos
     field start: Pos
 
-  typedef TypeExprKind: enum { Named(name: Sym, args: [TypeExpr]), Optional(inner: TypeExpr), Union(variants: [TypeExpr]), Sequence(elem: TypeExpr), Map(key: TypeExpr, value: TypeExpr), Tuple(fields: [TupleField]), Func(params: [TypeExpr], ret: TypeExpr), Channel(elem: TypeExpr), Generator(elem: TypeExpr), Lock, Unit }
+  typedef TypeExprKind: enum { Named(name: Sym, args: [TypeExpr]), Optional(inner: TypeExpr), Union(variants: [TypeExpr]), Sequence(elem: TypeExpr), Map(key: TypeExpr, value: TypeExpr), Tuple(fields: [TupleField]), Func(params: [TypeExpr], ret: TypeExpr), Channel(elem: TypeExpr), Generator(elem: TypeExpr), Lock, Unit, QualifiedType(base: Sym, member: Sym), InterfaceType(iface_name: Sym, member_name: Sym?, brand: Sym?) }
     source: ast.ly:28
 
   class TypeExpr

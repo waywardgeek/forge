@@ -17,18 +17,32 @@ module c_backend
 
     Interface dispatch uses vtables: each interface has a vtable struct of
     function pointers, each implementing class gets a static vtable instance.
-    Interface values are emitted as structs with a void* _data pointer and a
-    pointer to the vtable.
+    Interface values are fat pointers: typedef struct { void* _data;
+    TYPE_vtable_t* _vtable; } TYPE. Boxing wraps a concrete class pointer
+    into a fat pointer with the appropriate vtable. Dispatch is two-level:
+    abstract methods go through vtable function pointers (recv._vtable->
+    method(recv._data, args)); default methods are called directly as
+    compiled free functions (not through the vtable). Multi-param interfaces
+    (family interfaces) produce per-family-member vtable structs and fat
+    pointer types (e.g. DirectedGraph_G_vtable_t, DirectedGraph_G).
+    Type switches on interfaces use vtable identity comparison
+    (recv._vtable == &ClassName_as_InterfaceType). Level 0 structural
+    auto-detection scans classes for matching methods when no explicit
+    implements declaration exists.
 
     Emission order (dependency-safe):
       1. Forward declarations (all structs, classes, enums)
-      2. Slice/channel type defs (pointer-based, can precede struct defs)
-      3. Struct definitions (topologically sorted via Kahn's algorithm)
-      4. Optional/result type defs (AFTER structs, BEFORE classes)
-      5. Class definitions + slab allocator infrastructure
-      6. Interface vtable structs + static vtable instances per impl
-      7. Function forward declarations
-      8. Function bodies (with hoisted lambdas/spawn blocks)
+      2. Interface struct forward declarations (fat pointer typedefs)
+      3. Per-family-member vtable struct forward declarations
+      4. Slice/channel type defs (LYRIC_SLICE_DEF — after interface fwd decls)
+      5. Struct definitions (topologically sorted via Kahn's algorithm)
+      6. Optional/result type defs (AFTER structs, BEFORE classes)
+      7. Class definitions + slab allocator infrastructure
+      8. Interface vtable struct definitions (function pointer bodies)
+      9. Static const vtable instances per class×interface impl
+     10. Level 0 structural auto-detection vtable forward decls + definitions
+     11. Function forward declarations
+     12. Function bodies (with hoisted lambdas/spawn blocks)
 
     Slab allocator: AoS mode emits a struct ClassName with a lyric_next
     free-list pointer, block-based malloc with LYRIC_SLAB_BLOCK=256. SoA
@@ -163,6 +177,96 @@ module c_backend
     escaping by escape_printf (which would corrupt the resulting format).
     """
 
+  invariant "Interface Vtable Emission Ordering":
+    procedural
+    """
+    Interface struct forward declarations (typedef struct { void* _data;
+    TYPE_vtable_t* _vtable; } TYPE;) MUST be emitted BEFORE LYRIC_SLICE_DEF
+    macros, because slices of interface types (e.g. [Printable]) need the
+    interface struct type to be declared. The emission order in emit_c is:
+      1. Forward declarations for all types
+      2. Interface struct forward declarations (fat pointer typedefs)
+      3. Per-family-member vtable struct forward declarations
+      4. LYRIC_SLICE_DEF macros
+      5. ... struct/class/enum definitions ...
+      6. Vtable struct definitions (function pointer struct bodies)
+      7. Static const vtable instances (one per class×interface impl)
+      8. Level 0 structural auto-detection vtable forward decls + definitions
+    Violating this order produces incomplete-type C errors for slices of
+    interface types.
+    """
+
+  invariant "Vtable Generator Tracking Dict Pattern":
+    procedural
+    """
+    When a generator is produced by an interface method call (vtable dispatch),
+    the generator is opaque — its concrete type is erased. The pattern used
+    to track these generators across the StTempDef → StForIn boundary is a
+    pair of dicts keyed by temp_id (as Sym):
+      vtable_gen_recv:   temp_id → emitted receiver expression string
+      vtable_gen_method: temp_id → method name string
+    At StTempDef: if the producing call is ExMethodCall on an interface
+    receiver, store the receiver expression and method name. Emit the temp
+    as void*.
+    At StForIn: look up the collection temp_id in vtable_gen_recv. If found,
+    emit iteration via vtable _next/_value slots using wrapper functions
+    instead of the normal typed generator path.
+    This pattern exists because the generator type is erased through the
+    interface — the concrete gen_t* type is unknown at the for-loop site.
+    """
+
+  invariant "Two-Level Interface Dispatch":
+    procedural
+    """
+    Interface method calls use two dispatch strategies:
+    1. Abstract methods: dispatched through the vtable function pointer.
+       Emitted as recv._vtable->method(recv._data, args).
+    2. Default methods: dispatched as direct function calls to the compiled
+       free function (e.g. InterfaceName_FamilyParam_methodName). Default
+       methods are NOT included in the vtable struct — they are excluded
+       from vtable slots. The receiver is auto-boxed at the call site:
+       concrete class pointers are wrapped in fat pointers before being
+       passed to the default method's interface-typed parameter.
+    3. UFCS free functions: dispatched as direct calls with auto-boxing of
+       the first argument if it's a concrete type and the parameter expects
+       an interface type.
+    Detection: in emit_method_call_expr, when is_iface_type(recv_type) is
+    true, first check func_by_name for a compiled default method function.
+    If found, emit a direct call; otherwise fall through to vtable dispatch.
+    """
+
+  invariant "Auto-Boxing Concrete Receivers":
+    procedural
+    """
+    When a concrete class value must be passed where an interface fat pointer
+    is expected (e.g. calling a default method or UFCS function), the value
+    is auto-boxed at the call site:
+      (InterfaceType){ ._data = (void*)(uintptr_t)obj, ._vtable = &ClassName_as_InterfaceType }
+    This boxing occurs in:
+    - emit_method_call_expr: default method calls box the concrete receiver
+    - emit_args_boxed / emit_args_boxed_mut: box arguments when the callee's
+      parameter type is an interface but the argument is concrete
+    - emit_return_stmt: box return values via current_func!.return_type
+    - ExMakeSlice: box heterogeneous slice elements
+    - StAssign: box right-hand-side when assigning to an interface variable
+    resolve_concrete_class(v) extracts the class name from a value's type
+    for vtable instance lookup (_as_ naming).
+    """
+
+  invariant "Level 0 Structural Auto-Detection":
+    procedural
+    """
+    When an interface has no explicit implements declarations, the backend
+    performs structural auto-detection: it scans all classes for methods
+    matching the interface's required method signatures. A class implements
+    an interface if it has ALL required (non-default) methods with matching
+    names. func_name_set includes both receiver_method pairs (for class
+    methods) and bare free function names (for detecting compiled default
+    method functions like InterfaceName_FamilyParam_methodName). Default
+    methods are excluded from the required method list — only abstract
+    methods (those without a compiled default function) are checked.
+    """
+
   class CGen
     source: c_backend.ly:7
     field buf: StringBuilder?
@@ -202,6 +306,10 @@ module c_backend
     field tuple_count: i32
     field tuple_types: Dict<Sym, string>?
     field var_types: Dict<Sym, LType?>?
+    field vtable_gen_recv: Dict<Sym, string>?
+      why: "Vtable generator tracking: maps temp_id → emitted receiver expression string for generators produced by interface method calls. Stored at StTempDef, read at StForIn."
+    field vtable_gen_method: Dict<Sym, string>?
+      why: "Vtable generator tracking: maps temp_id → method name string for generators produced by interface method calls. Stored at StTempDef, read at StForIn."
     method line(self, s: string)
       source: c_backend.ly:183
     method write_raw(self, s: string)
@@ -209,6 +317,9 @@ module c_backend
     method c_type(self, t: LType?) -> string
       source: c_backend.ly:377
       why: "Central authority for mapping Lyric types to C type strings. Primitives map to stdint.h types (TyI32 → int32_t). Class handles become pointers (AoS) or uint32_t (SoA). Optionals on class handles are raw pointers/handles (NULL/0 = none); non-class optionals use LyricOpt<T> tagged structs. Tuples become named structs (LyricTuple_N). TyGenerator reaching this method is an invariant violation — generators are handled by dedicated emitters."
+    method is_iface_type(self, t: LType?) -> bool
+      source: c_backend.ly:386
+      why: "Returns true if an LType represents an interface (fat pointer). Handles both TyInterfaceRef and the legacy TyAny-with-interface-name path. Also checks multi-param interfaces by scanning iface_by_name for family_params matching a TyTypeVar name. Used to decide between vtable dispatch vs direct call, and to trigger auto-boxing."
     method c_field_decl(self, t: LType?, name: string) -> string
       source: c_backend.ly:493
     method c_return_type(self, t: LType?) -> string
@@ -248,6 +359,9 @@ module c_backend
       source: c_backend.ly:761
     method is_generator_func(self, f: LFuncDecl) -> bool
       source: c_backend.ly:793
+    method resolve_vtable_sig_type(self, t: LType?, if_name: string, family_params: [string]) -> string
+      source: c_backend.ly:798
+      why: "Resolves a type for a vtable function pointer signature. Type vars matching family_params become fat pointer types (e.g. N → InterfaceName_N); other type vars and types containing type vars erase to void*; concrete types pass through to c_type. Used when emitting vtable struct definitions to produce the correct function pointer signatures."
     method emit_value(self, v: LValue?) -> string
       source: c_backend.ly:801
       why: "Emits an LValue as a C expression string. Order of redirection checks matters: in_generator redirects to _gen->name, spawn_captures redirects to (*_ctx->name), mut_params redirects to (*name)."
@@ -300,7 +414,7 @@ module c_backend
       why: "Emits a free-function call. For generator functions, appends _init suffix. Mangling must agree with func_name and emit_method_call_expr."
     method emit_method_call_expr(self, e: LExpr?) -> string
       source: c_backend.ly:2205
-      why: "Emits a method call. For generator methods, appends _init suffix. Mangling must agree with func_name and emit_call_expr."
+      why: "Emits a method call. For interface receivers (is_iface_type), implements two-level dispatch: first checks func_by_name for a compiled default method function and emits a direct call with auto-boxed receiver; otherwise falls through to vtable dispatch (recv._vtable->method). For generator methods, appends _init suffix. Also handles UFCS free function dispatch with auto-boxing. Mangling must agree with func_name and emit_call_expr."
     method emit_class_alloc_expr(self, e: LExpr?) -> string
       source: c_backend.ly:2269
     method emit_struct_lit_expr(self, e: LExpr?) -> string
@@ -317,10 +431,13 @@ module c_backend
       source: c_backend.ly:2501
     method emit_args_boxed(self, func_name: string, args: [LValue?]) -> string
       source: c_backend.ly:2506
+      why: "Emits argument list with auto-boxing: looks up the callee's parameter types in func_by_name, and when a parameter is an interface type but the argument is a concrete class, wraps it in a fat pointer. Used for free-function calls that may take interface parameters."
     method emit_args_boxed_mut(self, func_name: string, args: [LValue?], mut_args: [bool]) -> string
       source: c_backend.ly:2542
+      why: "Like emit_args_boxed but also handles mut (by-pointer) arguments. Used for method calls and function calls with mutable parameters that may also need interface auto-boxing."
     method resolve_concrete_class(self, v: LValue?) -> string
       source: c_backend.ly:2580
+      why: "Extracts the concrete class name from a value's type for vtable instance lookup. Returns the class name string (used to construct ClassName_as_InterfaceType vtable references), or empty string if the value is not a concrete class."
     method emit_side_effect(self, e: LExpr?) -> string
       source: c_backend.ly:2598
     method emit_multi_assign(self, names: [string], types: [LType?], expr: LExpr?)
@@ -334,14 +451,15 @@ module c_backend
       why: "Central LIR statement dispatcher — every emitted line of C ultimately flows through here. Composes with in_generator, mut_params, and spawn_captures to redirect variable references; ordering of those checks in emit_value (called from here) is load-bearing for correctness."
     method emit_return_stmt(self, s: LStmt?)
       source: c_backend.ly:3232
+      why: "Emits return statements. When current_func!.return_type is an interface type and the return value is a concrete class, auto-boxes the value into a fat pointer before returning. This is the return-site boxing path."
     method emit_for_stmt(self, s: LStmt?)
       source: c_backend.ly:3331
-      why: "Emits for-loops. Generator-backed loops emit iterator init, a while-loop calling _next, and cleanup. Uses resolve_gen_base_name to derive the generator type."
+      why: "Emits for-loops. Generator-backed loops emit iterator init, a while-loop calling _next, and cleanup. Uses resolve_gen_base_name to derive the generator type. For vtable-dispatched generators (opaque interface iterators), looks up the collection temp_id in vtable_gen_recv/vtable_gen_method and emits iteration via vtable _next/_value slots using wrapper functions instead of typed generator calls."
     method emit_switch_stmt(self, s: LStmt?)
       source: c_backend.ly:3366
     method emit_type_switch_stmt(self, s: LStmt?)
       source: c_backend.ly:3481
-      doc: "Interface types: if/else-if chain comparing _vtable pointers. Union types: switch(tag)."
+      doc: "Interface types: if/else-if chain comparing _vtable pointers (identity comparison against &ClassName_as_InterfaceType vtable instances). The matched case extracts ._data and casts to the concrete class pointer. Union types: switch(tag)."
     method resolve_tag_constant(self, d: LTypeSwitchData, case_type: LType?) -> string
       source: c_backend.ly:3429
     method resolve_gen_base_name(self, v: LValue?) -> string
@@ -457,6 +575,10 @@ module c_backend
 
   func c_un_op(op: LUnOpKind) -> string
     source: c_backend.ly:365
+
+  func iface_type_name(t: LType?) -> string
+    source: c_backend.ly:416
+    why: "Extracts the C type name for an interface fat pointer from an LType. For multi-param interfaces with member_name, returns 'InterfaceName_MemberName' (e.g. 'DirectedGraph_G'). For single-param interfaces, returns the bare interface name (e.g. 'Printable'). Used throughout the backend to construct vtable instance names, fat pointer type names, and boxing expressions."
 
   func is_simple_enum(e: LEnumDecl) -> bool
     source: c_backend.ly:649

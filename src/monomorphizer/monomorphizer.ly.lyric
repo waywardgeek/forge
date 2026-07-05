@@ -202,6 +202,48 @@ module monomorphizer
     type annotation at construction time.
     """
 
+  invariant "member_name Preservation in Type Substitution":
+    procedural
+    """
+    subst_type and subst_type_remove_vars MUST copy the member_name field
+    when constructing a new LType during cloning/substitution. member_name
+    records the identity of a family member (e.g. which variant or field
+    a TyInterfaceRef belongs to). Dropping it during type substitution
+    caused TyInterfaceRef nodes to lose their family member identity,
+    breaking downstream passes that rely on member_name to resolve
+    interface dispatch. Fixed in interface redesign v2 (Phases 1-2):
+    both subst_type (monomorphizer.ly:1453) and subst_type_remove_vars
+    (monomorphizer.ly:1520) now include member_name: t!.member_name in
+    every LType constructor call.
+    """
+
+  invariant "TyInterfaceRef Passthrough":
+    procedural
+    """
+    TyInterfaceRef is NOT monomorphized — it represents an erased type
+    (fat pointer) that is already concrete regardless of type parameters.
+    Neither subst_type nor subst_type_remove_vars needs to special-case
+    it; TyInterfaceRef falls through to the generic deep-copy path, which
+    correctly preserves the type as-is while recursing into any nested
+    type positions (elem, key, params, etc.). No instantiation is recorded
+    for TyInterfaceRef in collect_from_type, and it is not subject to
+    name mangling or class/struct rename resolution.
+    """
+
+  invariant "brand Preservation in Type Substitution (TODO — Phase 3)":
+    procedural
+    """
+    KNOWN GAP: subst_type and subst_type_remove_vars do NOT currently
+    copy the brand field when constructing a new LType. This is the same
+    bug pattern as the member_name issue fixed in interface redesign v2.
+    The brand field is used for branded/newtype semantics and will be
+    dropped silently during type substitution, producing LType nodes with
+    a null/empty brand even when the original type carried one. This must
+    be fixed before branded types flow through generic code paths —
+    add brand: t!.brand to every LType constructor in subst_type and
+    subst_type_remove_vars.
+    """
+
   class MonoPass
     source: monomorphizer.ly:11
     field class_by_name: Dict<Sym, LClassDecl>?

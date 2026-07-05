@@ -70,9 +70,25 @@ module desugar
        bindings (ibm) when resolving dot-operator references inside
        the specialized body. See cr/docs/multi-class-interface-
        redesign.md §9 Phase 4 Wave 1 4w1-a.
-    5. desugar_default_impls — extracts interface methods that carry a
-       body into top-level generic functions guarded by relational
-       `where` clauses, so any conforming class picks them up.
+    5. desugar_default_impls — two-path extraction for interface methods
+       that carry a body:
+       A. Erased path (interface has no field declarations AND no
+          explicit impl blocks): deep-copies each default method via
+          deep_copy_func_decl into a concrete free function with
+          name `{Iface}_{Member}_{method}`. Sets receiver_type=null,
+          converts the self param to an explicit param typed
+          QualifiedType(iface.name, member_name). No type params or
+          where clause added. The original method is KEPT in the
+          interface with its body intact — the checker's
+          check_structural_chase skips methods with bodies (defaults
+          that don't need satisfaction by concrete classes).
+       B. Non-erased / has-impl path (interface has field declarations
+          OR has explicit impl blocks): existing behavior — extracts
+          the method in-place as a generic function, copies interface
+          type params onto the function, adds a relational where
+          clause so any conforming class picks it up. For interfaces
+          with impl blocks, pass 4.5 specializes default methods
+          onto concrete classes first.
 
     All five passes complete before the checker runs; the checker therefore
     only ever sees plain classes, fields, methods, and impl blocks.
@@ -192,6 +208,36 @@ module desugar
     match expressions — but any future pass that deep-copies arbitrary
     bodies must either avoid Lock/Match or extend deep_copy_stmt /
     deep_copy_expr first.
+    """
+
+  invariant "Erased Interface Default Method Extraction":
+    procedural
+    """
+    desugar_default_impls treats erased interfaces (method-only, no
+    field declarations) WITHOUT explicit impl blocks differently from
+    the general case:
+
+    Erased path: deep-copies each default method via deep_copy_func_decl
+    (with an empty type_map to avoid aliasing bugs) into a concrete free
+    function. The copy is renamed to `{Iface}_{Member}_{method}`, its
+    receiver_type is set to null, and its self param is converted to an
+    explicit param typed QualifiedType(iface.name, member_name). No type
+    params or where clause are added. The original method is KEPT in the
+    interface with its body intact — stripping the body would break the
+    checker's check_structural_chase, which skips methods with bodies
+    (default methods that don't need to be satisfied by concrete
+    classes).
+
+    Has-impl path: when the erased interface HAS explicit impl blocks,
+    pass 4.5 (desugar_specialize_default_impls) handles specialization
+    onto concrete receiver classes. Pass 5 then uses the old generic
+    path (copy interface type params, add relational where clause) so
+    the generic version remains available for unspecialized callers.
+
+    The deep copy in the erased path is REQUIRED. Without it, the
+    original FuncDecl is mutated (receiver_type set to null, self param
+    rewritten), which corrupts the interface's own method list and
+    breaks checker satisfaction for other conforming classes.
     """
 
   invariant "Impl Block Merging":
@@ -315,10 +361,18 @@ module desugar
       desugar_specialize_default_impls — Pass 4.5: creates specialized
         copies of default-bodied methods on concrete receiver classes
         using rich substitution. Sets fn.source_impl back-pointer.
-      desugar_default_impls — Pass 5: extracts remaining bodied methods
-        into top-level generic functions with relational where clauses.
+      desugar_default_impls — Pass 5: two-path extraction of default-
+        bodied interface methods. Erased interfaces (no field decls)
+        without impl blocks: deep-copies via deep_copy_func_decl into
+        concrete free functions with QualifiedType first param; original
+        kept with body intact for checker satisfaction. Non-erased or
+        has-impl interfaces: extracts in-place as generic functions with
+        interface type params and relational where clauses.
 
-    Deep-copy utilities (used by passes 4 and 4.5):
+    Deep-copy utilities (used by passes 4, 4.5, and 5):
+      deep_copy_func_decl — full deep copy of a FuncDecl including all
+      child arrays (params, type params, where clauses) and body. Used
+      by pass 0 (inheritance) and pass 5 (erased default extraction).
       deep_copy_block / _block_val / _stmt / _expr / _type_expr /
       _type_expr_kind / _type_args / _expr_list — reconstruct AST
       without sharing Data pointers. deep_copy_type_args is critical
@@ -354,6 +408,7 @@ module desugar
 
   func deep_copy_func_decl(f: FuncDecl, type_map: Dict<Sym, string>) -> FuncDecl
     source: desugar.ly:125
+    doc: "Deep copy utility for FuncDecl nodes. Copies all fields (name, flags, receiver_type, return_type, body, span) and child arrays (type params, params, where clauses). Applies simple type-param substitution via type_map during copy. Body is deep-copied via deep_copy_block. Used by pass 0 (desugar_interface_extends) for inheritance and pass 5 (desugar_default_impls) for erased interface default extraction (with empty type_map to avoid aliasing)."
 
   func desugar_interface_fields(file: File)
     source: desugar.ly:179
@@ -369,6 +424,7 @@ module desugar
 
   func desugar_default_impls(file: File)
     source: desugar.ly:897
+    doc: "Pass 5: two-path extraction of default-bodied interface methods. Erased interfaces (no field decls) without impl blocks get their defaults deep-copied into concrete free functions named {Iface}_{Member}_{method} with QualifiedType first param. Non-erased or has-impl interfaces use the old path: extract in-place with interface type params and relational where clause."
 
   func desugar_field_access(file: File)
     source: desugar.ly:973

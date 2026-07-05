@@ -41,6 +41,25 @@ module checker
     validate_all_types_resolved, validate_where_clauses, and
     validate_subscope_collisions — to ensure the integrity of the annotated AST.
 
+    Phase 1.5c (default method registration on family members): After
+    Phase 1.5/1.5b register impl methods on concrete classes, Phase 1.5c
+    scans top-level block functions for desugared interface default methods
+    (those with where clauses binding a type param to an interface). For
+    each such function, it registers the method on every family member
+    TypeInfo (e.g. DirectedGraph.N, DirectedGraph.E) so that method calls
+    on interface-typed receivers resolve without requiring a concrete class.
+    Example: g.count_edges() where g: DirectedGraph resolves via the
+    family member TypeInfo for DirectedGraph.N.
+
+    Method Resolution Chain (Phase 2): check_method_call resolves methods
+    in a 3-step priority chain:
+      1. Concrete class method: direct lookup on receiver's TypeInfo.methods
+      2. Interface default method: if receiver is interface-typed, walks
+         family member TypeInfos (registered by Phase 1.5c) looking for
+         the method — enables default method calls on generic receivers
+      3. Free function UFCS: looks up the method name in scope as a free
+         function and prepends the receiver as the first argument
+
     CRITICAL: check_file runs Phase 0 across ALL blocks, then Phase 1 across
     ALL blocks, then Phase 2 across ALL blocks. This ensures cross-file type
     references and cross-file method calls all resolve correctly.
@@ -153,11 +172,96 @@ module checker
     - Any → anything and anything → Any (top type, bidirectional).
     - TypeVar → anything (unresolved generics are compatible during inference).
     - Interface ← Class/Struct: structural subtyping — all required methods must exist.
+      is_assignable checks explicit implements_list first, then calls
+      check_structural_satisfaction for lazy structural matching.
+      check_structural_satisfaction handles qualified interface names
+      (e.g. "DirectedGraph.N") by splitting at dot and delegating to
+      check_structural_chase for multi-param signature walking.
     - Union: a type is assignable to a union if assignable to ANY variant.
     - ErrorResult: (T, error) tuples checked component-wise.
     - Numeric widening: smaller to larger same-sign (see above).
 
     is_assignable implements these rules.
+    """
+
+  invariant "Interface Resolution Pipeline":
+    procedural
+    """
+    The interface redesign v2 introduces a multi-stage pipeline for
+    resolving interface family member types through the checker:
+
+    1. QualifiedType resolution (resolve_type_expr): TypeExpr with
+       QualifiedType(base, member) where base is a known interface name
+       resolves to TypeKind.Interface with name "Base.Member". This
+       enables variables typed as interface family members (e.g.
+       `n: DirectedGraph.N`).
+
+    2. Interface assignability (is_assignable): interface types are
+       assignable FROM classes that structurally satisfy them. Checks
+       explicit implements_list first, then delegates to
+       check_structural_satisfaction for lazy structural matching.
+
+    3. Structural satisfaction (check_structural_satisfaction): given a
+       class name and interface name, checks whether the class has all
+       abstract methods the interface requires for that family member
+       slot. Handles qualified interface names ("DirectedGraph.N") by
+       splitting at the dot and delegating to check_structural_chase.
+
+    4. Signature chase (check_structural_chase): for multi-param
+       interfaces, walks method signatures from an anchor class to
+       discover which concrete classes satisfy which family param slots.
+       Given anchor_class and expected_member, iterates interface methods
+       to build the full class-tuple binding.
+
+    5. Method resolution (check_method_call): 3-step chain —
+       concrete class method → interface default method (via family
+       member TypeInfos registered by Phase 1.5c) → free function UFCS.
+    """
+
+  invariant "Family Params Classification":
+    procedural
+    """
+    TypeInfo.family_params is populated by register_interface during
+    Phase 1 from a receiver_type scan over interface method declarations.
+    Each entry is a type param name (e.g. "N", "E") that appears as a
+    method receiver in the interface body — indicating that concrete
+    classes bound to that param slot are "family members" which must
+    structurally satisfy the interface's abstract methods for that
+    receiver position.
+
+    family_params drives several downstream systems:
+    - QualifiedType resolution: "DirectedGraph.N" resolves only if "N"
+      is in DirectedGraph's family_params.
+    - Phase 1.5c default method registration: default methods are
+      registered on per-family-member TypeInfos keyed by
+      "InterfaceName.ParamName".
+    - C backend vtable generation: family_params determines which type
+      vars become fat pointer types vs void* erasure in vtable
+      signatures.
+    """
+
+  invariant "Phase 1.5c — Default Methods on Family Members":
+    procedural
+    """
+    Phase 1.5c runs within register_interface_methods after Phase 1.5/1.5b.
+    It scans top-level block functions for desugared interface default
+    methods — functions that desugar_default_impls extracted from interface
+    bodies and moved to top level with where clauses binding a type param
+    to the interface.
+
+    For each such default method, Phase 1.5c registers it on every family
+    member TypeInfo (e.g. the TypeInfo for "DirectedGraph.N" and
+    "DirectedGraph.E") so that method calls on interface-typed receivers
+    resolve without requiring a concrete class binding.
+
+    Example: `func count_edges<G>(self: G) -> int where G: DirectedGraph`
+    gets registered on the TypeInfo for "DirectedGraph" family members,
+    enabling `g.count_edges()` when g is typed as DirectedGraph (or
+    DirectedGraph.N).
+
+    These family member TypeInfos are distinct from the main interface
+    TypeInfo — they carry only the methods relevant to that family member
+    slot, not the full interface method set.
     """
 
   invariant "Phase 1.5 — Interface Methods":
@@ -353,6 +457,8 @@ module checker
     field implements_list: [string]
     field methods: Dict<Sym, Type>
     field sub_scope_labels: Dict<Sym, bool>
+    field family_params: [string]
+      doc: "For interfaces: type params that appear in method receiver position. Populated by register_interface from receiver_type scan. Each entry is a type param name (e.g. 'N', 'E') that represents a family member — a concrete class that must structurally satisfy this interface's abstract methods for that receiver slot."
     field type_param_constraints: [string]
     field type_param_names: [string]
     field type_val: Type
@@ -426,7 +532,7 @@ module checker
       source: checker.ly:352
     method is_assignable(self, src: Type, to: Type) -> bool
       source: checker.ly:570
-      why: "Implements Lyric's subtyping rules: nil→optional/class/interface, Any↔anything, TypeVar↔anything, structural interface subtyping, union compatibility, numeric widening."
+      why: "Implements Lyric's subtyping rules: nil→optional/class/interface, Any↔anything, TypeVar↔anything, structural interface subtyping, union compatibility, numeric widening. Interface assignability checks explicit implements_list first, then falls back to check_structural_satisfaction for lazy structural subtyping — a class is assignable to an interface if it has all abstract methods the interface requires."
     method infer_type_args(self, func_type: Type, arg_types: [Type]) -> Dict<Sym, Type>
       source: checker.ly:905
       why: "Compares concrete argument types against generic function parameter patterns via match_type_vars to bind type variables."
@@ -436,7 +542,7 @@ module checker
       source: checker.ly:949
     method resolve_type_expr(self, te: TypeExpr) -> Type
       source: checker.ly:1121
-      why: "Converts an AST TypeExpr into the checker's internal Type representation, resolving named types through the registry."
+      why: "Converts an AST TypeExpr into the checker's internal Type representation, resolving named types through the registry. Handles QualifiedType(base, member): when base is a known interface name and member matches a family_params entry, resolves to TypeKind.Interface with the qualified name 'Base.Member' — enabling family-member-typed variables (e.g. DirectedGraph.N as a standalone type)."
     method resolve_named_type(self, name: string, args: [TypeExpr], span: Span) -> Type
       source: checker.ly:1185
     method func_decl_to_type(self, f: FuncDecl) -> Type
@@ -542,7 +648,7 @@ module checker
       source: checker.ly:3775
     method check_method_call(self, call_expr: Expr, receiver: Expr, method: Sym, type_args: [TypeExpr], args: [Expr]) -> Type
       source: checker.ly:3870
-      why: "Resolves method calls including dotted-scope rewriting for relational sub-scopes (obj.label.method → obj.__label_method)."
+      why: "Resolves method calls via a 3-step resolution chain: (1) concrete class method — direct lookup on receiver TypeInfo.methods; (2) interface default method — if receiver is interface-typed, walks family member TypeInfos registered by Phase 1.5c for default methods; (3) free function UFCS — looks up method name in scope as a free function and prepends receiver as first arg. Also handles dotted-scope rewriting for relational sub-scopes (obj.label.method → obj.__label_method)."
     method check_builtin_method(self, recv_type: Type, method: string, arg_types: [Type]) -> Type?
       source: checker.ly:4113
     method check_list_method(self, elem: Type, method: string) -> Type?
@@ -613,6 +719,12 @@ module checker
       why: "Phase 1.7: verifies every plain impl block satisfies all abstract members of its target interface."
     method validate_one_impl_satisfies(self, ib: ImplBlock, class_decls: Dict<Sym, ClassDecl>)
       source: checker.ly:5456
+    method check_structural_satisfaction(self, class_name: string, iface_name: string) -> bool
+      source: checker.ly:5681
+      why: "Checks if a class structurally satisfies an interface — i.e. has all abstract methods the interface requires. Used by is_assignable as a lazy structural subtyping check. Handles qualified interface names ('DirectedGraph.N') by splitting at the dot to extract base interface and member name, then delegates to check_structural_chase for multi-param signature walking."
+    method check_structural_chase(self, anchor_class: string, iface: InterfaceDecl, expected_member: string) -> bool
+      source: checker.ly:5721
+      why: "Multi-param signature chase for interface family satisfaction. Given an anchor class and a target family member name, walks the interface's method signatures to discover which concrete classes satisfy which family param slots. Iterates interface type params and methods, checking whether the anchor class has each method whose receiver matches the expected member param. Returns true if all required methods for the expected_member slot are present on anchor_class."
 
   func new_checker() -> Checker
     source: checker.ly:178
