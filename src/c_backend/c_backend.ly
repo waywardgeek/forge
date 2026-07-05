@@ -2318,6 +2318,28 @@ func CGen.emit_method_call_expr(self, e: LExpr?) -> string {
   // Check for interface vtable dispatch
   let recv_type = self.resolve_value_type(d.receiver)
   if self.is_iface_type(recv_type) {
+    // Check for compiled default method function before vtable dispatch.
+    // Erased interface default methods are compiled as free functions named
+    // {Iface}_{Member}_{method} (see desugar_default_impls). If one exists
+    // in func_by_name, call it directly with the fat pointer as first arg.
+    let iface_tn = iface_type_name(recv_type)
+    if iface_tn != "" {
+      let default_fn_name = iface_tn + "_" + d.method
+      let default_fn = self.func_by_name!.get(sym(default_fn_name))
+      if !isnull(default_fn) {
+        if self.is_gen_func_by_name(default_fn_name) {
+          if args_str != "" {
+            return f"{default_fn_name}_init({recv}, {args_str})"
+          }
+          return f"{default_fn_name}_init({recv})"
+        }
+        if args_str != "" {
+          return f"{default_fn_name}({recv}, {args_str})"
+        }
+        return f"{default_fn_name}({recv})"
+      }
+    }
+    // Abstract method — vtable dispatch
     if args_str != "" {
       return f"{recv}._vtable->{d.method}({recv}._data, {args_str})"
     }
@@ -2365,6 +2387,66 @@ func CGen.emit_method_call_expr(self, e: LExpr?) -> string {
     }
     return f"{method_name}_init({recv})"
   }
+
+  // Auto-boxing for interface default methods (Phase 2 Sprint 2).
+  // If the class method doesn't exist in func_by_name, search for a matching
+  // erased interface default method and auto-box the receiver into a fat pointer.
+  let method_fn = self.func_by_name!.get(sym(method_name))
+  if isnull(method_fn) && class_name != "" {
+    let iface_keys = self.iface_by_name!.keys()
+    for ik in iface_keys {
+      let iface_decl = self.iface_by_name!.get(ik)
+      if isnull(iface_decl) { continue }
+      let fps = iface_decl!.value.family_params
+      let mut fpi = 0
+      while fpi < len(fps) {
+        let fp = fps[fpi]
+        let default_fn_name = ik.name + "_" + fp + "_" + d.method
+        let dfn = self.func_by_name!.get(sym(default_fn_name))
+        if !isnull(dfn) {
+          // Found a default method! Auto-box receiver and call.
+          let iface_member = ik.name + "_" + fp
+          let vtable_name = class_name + "_as_" + iface_member
+          let data_val = if self.prog!.slab_mode_soa { f"(void*)(uintptr_t){recv}" } else { recv }
+          let boxed = f"({iface_member}){{._data = {data_val}, ._vtable = &{vtable_name}}}"
+          if self.is_gen_func_by_name(default_fn_name) {
+            if args_str != "" {
+              return f"{default_fn_name}_init({boxed}, {args_str})"
+            }
+            return f"{default_fn_name}_init({boxed})"
+          }
+          if args_str != "" {
+            return f"{default_fn_name}({boxed}, {args_str})"
+          }
+          return f"{default_fn_name}({boxed})"
+        }
+        fpi = fpi + 1
+      }
+    }
+    // Also check for UFCS free functions with interface-typed first param
+    // (e.g., has_edges(g: DirectedGraph.G) called as al.has_edges()).
+    let ufcs_fn = self.func_by_name!.get(sym(d.method))
+    if !isnull(ufcs_fn) && len(ufcs_fn!.value.params) > 0 {
+      let first_param_type = ufcs_fn!.value.params[0].typ
+      if self.is_iface_type(first_param_type) {
+        let iface_tn = iface_type_name(first_param_type)
+        let vtable_name = class_name + "_as_" + iface_tn
+        let data_val = if self.prog!.slab_mode_soa { f"(void*)(uintptr_t){recv}" } else { recv }
+        let boxed = f"({iface_tn}){{._data = {data_val}, ._vtable = &{vtable_name}}}"
+        if self.is_gen_func_by_name(d.method) {
+          if args_str != "" {
+            return f"{d.method}_init({boxed}, {args_str})"
+          }
+          return f"{d.method}_init({boxed})"
+        }
+        if args_str != "" {
+          return f"{d.method}({boxed}, {args_str})"
+        }
+        return f"{d.method}({boxed})"
+      }
+    }
+  }
+
   if args_str != "" {
     return f"{method_name}({recv}, {args_str})"
   }
@@ -4925,6 +5007,9 @@ func CGen.emit_func_decl(self, f: LFuncDecl) {
   }
   self.temp_types = Dict<Sym, LType?>()
   self.var_types = Dict<Sym, LType?>()
+  // Clear vtable generator tracking — temp IDs are per-function
+  self.vtable_gen_recv = Dict<Sym, string>()
+  self.vtable_gen_method = Dict<Sym, string>()
   let ret_type = self.c_return_type(f.return_type)
   let params = self.c_param_list(f)
   let name = self.func_name(f)
@@ -5751,6 +5836,9 @@ pub func emit_c(prog: LProgram?) -> string {
         while j < len(ifaces[i].methods) {
           let m = ifaces[i].methods[j]
           if m.receiver_type == fp {
+            // Skip default methods (compiled as free functions, not vtable slots)
+            let default_fn_key = if_name + "_" + fp + "_" + m.name
+            if !g.func_by_name!.has(sym(default_fn_key)) {
             // Resolve types: family member type vars become fat pointer types,
             // other type vars erase to void*, concrete types pass through.
             let ret_type = g.resolve_vtable_sig_type(m.return_type, if_name, ifaces[i].family_params)
@@ -5774,6 +5862,7 @@ pub func emit_c(prog: LProgram?) -> string {
                 g.line(f"void* (*{m.name}_value)(void*);")
               }
             }
+            } // if !default method
           }
           j = j + 1
         }
@@ -5816,6 +5905,10 @@ pub func emit_c(prog: LProgram?) -> string {
   while i < len(funcs) {
     if funcs[i].receiver != "" {
       func_name_set.set(sym(funcs[i].receiver + "_" + funcs[i].name), true)
+    } else {
+      // Include free functions (e.g. DirectedGraph_G_count_edges) for
+      // default method detection in structural auto-detection below.
+      func_name_set.set(sym(funcs[i].name), true)
     }
     i = i + 1
   }
@@ -5829,12 +5922,17 @@ pub func emit_c(prog: LProgram?) -> string {
       let mut fi = 0
       while fi < len(ifd.family_params) {
         let fp = ifd.family_params[fi]
-        // Collect abstract method names for this family member
+        // Collect abstract method names for this family member.
+        // Skip default methods (they have compiled free functions named
+        // {Iface}_{Member}_{method} — concrete classes don't need them).
         let mut required_methods: [string] = []
         let mut mi = 0
         while mi < len(ifd.methods) {
           if ifd.methods[mi].receiver_type == fp {
-            append(required_methods, ifd.methods[mi].name)
+            let default_fn_key = ifd.name + "_" + fp + "_" + ifd.methods[mi].name
+            if !func_name_set.has(sym(default_fn_key)) {
+              append(required_methods, ifd.methods[mi].name)
+            }
           }
           mi = mi + 1
         }
@@ -6000,6 +6098,8 @@ pub func emit_c(prog: LProgram?) -> string {
   while i < len(funcs) {
     if funcs[i].receiver != "" {
       func_name_set2.set(sym(funcs[i].receiver + "_" + funcs[i].name), true)
+    } else {
+      func_name_set2.set(sym(funcs[i].name), true)
     }
     i = i + 1
   }
@@ -6010,11 +6110,15 @@ pub func emit_c(prog: LProgram?) -> string {
       let mut fi2 = 0
       while fi2 < len(ifd2.family_params) {
         let fp2 = ifd2.family_params[fi2]
+        // Collect abstract method names, skipping defaults (same as fwd decl)
         let mut required_methods2: [string] = []
         let mut mi2 = 0
         while mi2 < len(ifd2.methods) {
           if ifd2.methods[mi2].receiver_type == fp2 {
-            append(required_methods2, ifd2.methods[mi2].name)
+            let dfk2 = ifd2.name + "_" + fp2 + "_" + ifd2.methods[mi2].name
+            if !func_name_set2.has(sym(dfk2)) {
+              append(required_methods2, ifd2.methods[mi2].name)
+            }
           }
           mi2 = mi2 + 1
         }
@@ -6072,6 +6176,9 @@ pub func emit_c(prog: LProgram?) -> string {
               while k2 < len(ifd2.methods) {
                 let m2 = ifd2.methods[k2]
                 if m2.receiver_type == fp2 {
+                  // Skip default methods (no vtable slot for them)
+                  let dfk_def = ifd2.name + "_" + fp2 + "_" + m2.name
+                  if !func_name_set2.has(sym(dfk_def)) {
                   let ret_type2 = g.resolve_vtable_sig_type(m2.return_type, ifd2.name, ifd2.family_params)
                   let sb2 = new_string_builder()
                   sb2.write("void*")
@@ -6094,6 +6201,7 @@ pub func emit_c(prog: LProgram?) -> string {
                       g.line(f".{m2.name}_value = ({ifd2.name}_{yield_fp2}(*)(void*)){cname2}_{m2.name}_value_{ifd2.name}_{yield_fp2},")
                     }
                   }
+                  } // if !default method
                 }
                 k2 = k2 + 1
               }

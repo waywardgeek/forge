@@ -109,25 +109,24 @@ func test_vtable_generator_iteration() {
 
 // NOTE: The following tests require default method dispatch (auto-boxing,
 // vtable default method wiring) which is Phase 2 Sprint 2 work.
-// Uncomment when that infrastructure lands.
 
-// func test_structural_satisfaction_and_defaults() {
-//     let al = build()
-//     assert_eq(al.count_edges(), 2, "two flights")
-//     let g: DirectedGraph.G = al
-//     assert_eq(g.count_edges(), 2, "same answer through the fat pointer")
-// }
+func test_structural_satisfaction_and_defaults() {
+    let al = build()
+    assert_eq(al.count_edges(), 2, "two flights")
+    let g: DirectedGraph.G = al
+    assert_eq(g.count_edges(), 2, "same answer through the fat pointer")
+}
 
-// func test_default_method_on_n() {
-//     let al = build()
-//     for a in al.nodes() {
-//         assert_eq(a.out_degree(), 1, "each airport has one departure")
-//     }
-// }
+func test_default_method_on_n() {
+    let al = build()
+    for a in al.nodes() {
+        assert_eq(a.out_degree(), 1, "each airport has one departure")
+    }
+}
 
-// func test_free_function_ufcs() {
-//     let al = build()
-//     assert(al.has_edges(), "UFCS resolves to free function with auto-box")
-//     let empty = Airline { name: "empty", airports: [] }
-//     assert(!empty.has_edges(), "no nodes, no edges")
-// }
+func test_free_function_ufcs() {
+    let al = build()
+    assert(al.has_edges(), "UFCS resolves to free function with auto-box")
+    let empty = Airline { name: "empty", airports: [] }
+    assert(!empty.has_edges(), "no nodes, no edges")
+}

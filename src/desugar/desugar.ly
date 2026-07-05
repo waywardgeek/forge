@@ -901,43 +901,95 @@ lyric desugar {
         let mut kept: [FuncDecl] = []
         for m in methods {
           if !isnull(m.body) {
-            // Extract as top-level function
-            let fn = m
-            // Preserve receiver_type — the checker uses it to register methods
-            // on concrete types that implement this interface via impl blocks.
-
-            // Add interface type params
-            let iface_tps = iface.itp.children()
-            for tp in iface_tps {
-              let new_tp = TypeParam {
-                name: tp.name,
-                constraint: tp.constraint,
-                span: tp.span,
+            // Check if interface is erased (no field declarations) AND has no
+            // explicit impl blocks. With explicit impls, pass 4.5 specializes
+            // default methods onto concrete classes — use the old generic path.
+            // Without impl blocks (Level 0 structural), compile once over fat ptrs.
+            let is_erased = len(iface.ifd.children()) == 0
+            let mut has_impl = false
+            if is_erased && !isnull(iface.name) {
+              for blk in file.fb.children() {
+                for ib in blk.ib.children() {
+                  if !isnull(ib.interface_name) && ib.interface_name! == iface.name! {
+                    has_impl = true
+                  }
+                }
               }
-              array_append<FuncDecl, TypeParam>(fn, new_tp)
             }
 
-            // Add relational where clause
-            let mut where_args: [TypeExpr] = []
-            for tp in iface_tps {
-              let arg = TypeExpr {
-                kind: Named(tp.name!, []),
-                span: tp.span,
+            if is_erased && !has_impl && !isnull(m.receiver_type) && !isnull(iface.name) {
+              // Erased interface default method → concrete free function.
+              // Deep copy the method to create a new free function; keep the
+              // original (body-stripped) in the interface for checker registration.
+              let empty_map = Dict<Sym, string>()
+              let fn = deep_copy_func_decl(m, empty_map)
+              let recv_sym = fn.receiver_type!
+
+              // Rename: {Iface}_{Member}_{method}
+              let new_name = iface.name!.name + "_" + recv_sym.name + "_" + fn.name!.name
+              fn.name = sym(new_name)
+
+              // Change self param to explicit interface-typed param
+              let params = fn.param.children()
+              for p in params {
+                if p.is_self {
+                  p.is_self = false
+                  p.type_expr = TypeExpr {
+                    kind: QualifiedType(iface.name!, recv_sym),
+                    span: fn.span,
+                  }
+                }
               }
-              where_args = append(where_args, arg)
-            }
-            let wc = WhereClause {
-              variable: null,
-              constraint: iface.name,
-              span: iface.span,
-            }
-            for arg in where_args {
-              array_append<WhereClause, TypeExpr>(wc, arg)
-            }
-            array_append<FuncDecl, WhereClause>(fn, wc)
 
-            // Remove from interface, add to block
-            array_append<LyricBlock, FuncDecl>(block, fn)
+              // Make it a free function — no receiver_type, no type params, no where clause
+              fn.receiver_type = null
+
+              // Keep the original in the interface WITH its body — the checker's
+              // check_structural_chase skips methods with bodies (they're defaults
+              // that don't need to be satisfied by concrete classes).
+              kept = append(kept, m)
+
+              // Add the free function to the block
+              array_append<LyricBlock, FuncDecl>(block, fn)
+            } else {
+              // Non-erased: existing behavior — extract as generic function with where clause.
+              let fn = m
+              // Preserve receiver_type — the checker uses it to register methods
+              // on concrete types that implement this interface via impl blocks.
+
+              // Add interface type params
+              let iface_tps = iface.itp.children()
+              for tp in iface_tps {
+                let new_tp = TypeParam {
+                  name: tp.name,
+                  constraint: tp.constraint,
+                  span: tp.span,
+                }
+                array_append<FuncDecl, TypeParam>(fn, new_tp)
+              }
+
+              // Add relational where clause
+              let mut where_args: [TypeExpr] = []
+              for tp in iface_tps {
+                let arg = TypeExpr {
+                  kind: Named(tp.name!, []),
+                  span: tp.span,
+                }
+                where_args = append(where_args, arg)
+              }
+              let wc = WhereClause {
+                variable: null,
+                constraint: iface.name,
+                span: iface.span,
+              }
+              for arg in where_args {
+                array_append<WhereClause, TypeExpr>(wc, arg)
+              }
+              array_append<FuncDecl, WhereClause>(fn, wc)
+
+              // Remove from interface, add to block
+              array_append<LyricBlock, FuncDecl>(block, fn)
+            }
           } else {
             kept = append(kept, m)
           }
