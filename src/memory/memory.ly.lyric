@@ -143,6 +143,98 @@ module memory
     UAF where the checker's type Dict was freed while still referenced.
     """
 
+  invariant "Move semantics: ownership transfer without inc/dec":
+    procedural
+    """
+    To minimize RC overhead, the pass implements move semantics.
+    When a local variable is assigned to another and will never be used
+    again (it is "dead"), ownership of the reference is transferred
+    WITHOUT emitting StRefIncr/StRefDecr.
+
+    Liveness is determined by count_var_uses and var_is_live_after, which
+    scan forward from the assignment point. If the source variable has
+    zero remaining uses, the assignment is a move: skip the retain on the
+    destination and skip the scope-exit release on the source.
+
+    This is particularly effective for return values from function calls
+    that are immediately bound to a local and never aliased.
+    """
+
+  invariant "Struct/tuple RC: recursive field traversal":
+    procedural
+    """
+    Value types (structs and tuples) may contain embedded class handles
+    that require reference counting. The pass generates recursive
+    cleanup logic via emit_struct_field_rc that traverses these
+    structures field-by-field:
+
+      - On copy (is_retain=true): emit StRefIncr for each RC field.
+      - On destruction (is_retain=false): emit StRefDecr for each RC field.
+
+    emit_struct_releases iterates tracked local structs at scope exit and
+    calls emit_struct_field_rc(is_retain=false) for each. This ensures
+    nested references are properly released even when the outer value
+    type is stack-allocated.
+
+    type_has_rc_fields gates the traversal — structs without any
+    (transitive) RC fields are skipped entirely.
+    """
+
+  invariant "Slice RC: release elements before freeing backing storage":
+    procedural
+    """
+    When a slice contains elements that are reference-counted (class
+    handles or structs with RC fields), the pass injects
+    StSliceRcRelease BEFORE StSliceFree. This ensures every element
+    in the slice has its reference count decremented before the
+    slice's backing array is deallocated.
+
+    Without this ordering, freeing the backing array first would leak
+    all RC objects still referenced by the slice elements.
+    """
+
+  invariant "Temp last-use release: cleanup for unnamed intermediates":
+    procedural
+    """
+    Function calls that return owned class handles into unnamed
+    temporaries (temp IDs, not named variables) must still be released.
+    The insert_temp_releases post-pass scans flat statement blocks to
+    find the last use of each such temporary ID and injects StRefDecr
+    immediately after.
+
+    This covers patterns like `foo().bar()` where foo() returns an RC
+    handle that is used only as the receiver of bar() and is never
+    assigned to a local variable.
+    """
+
+  invariant "Delta folding: eliminate redundant adjacent RC pairs":
+    procedural
+    """
+    The delta_fold optimization scans statement lists for adjacent
+    StRefIncr/StRefDecr pairs on the same handle (matched by
+    rc_handles_match) and removes both. This eliminates redundant
+    retain/release sequences that arise naturally from the conservative
+    RC injection strategy.
+
+    Currently operates locally within a single flat block. A more global
+    data-flow analysis could identify non-adjacent redundant pairs but
+    is not yet implemented.
+    """
+
+  doc "Dependencies":
+    """
+    The memory module is deeply integrated with two compiler subsystems:
+
+    - LIR (Low-level IR): The module is entirely defined in terms of
+      LIR structures (LStmt, LExpr, LType, LValue). It depends on the
+      correctness of the monomorphization pass that precedes it.
+
+    - Lyric Runtime: The low-level statements injected by this module
+      (StSlabAlloc, StRefIncr, StRefDecr, StSliceFree, StSliceRcRelease)
+      are direct precursors to calls into the Lyric runtime library
+      (lyric_runtime.h). The memory module must remain in sync with the
+      runtime's ABI.
+    """
 
   func compute_escape_map(prog: LProgram) -> Dict<Sym, bool>
     source: memory.ly:27

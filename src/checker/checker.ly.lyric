@@ -1,6 +1,6 @@
 module checker
   source: ["checker.ly"]
-  why: "Three-phase type checker with expression annotation. Phase 0 pre-registers all type names across all blocks. Phase 1 registers all type/function declarations. Phase 2 checks function bodies and annotates every Expr.resolved_type with a TypeExpr for the lowerer."
+  why: "Three-phase type checker with expression annotation, deeply integrated with Lyric's Relations ownership system. Phase 0 pre-registers all type names across all blocks. Phase 1 registers all type/function declarations. Phase 2 checks function bodies and annotates every Expr.resolved_type with a TypeExpr for the lowerer. Also validates relational hint shapes, enforces interface satisfaction, and implements dotted-scope access resolution for relational sub-scopes."
 
   doc "Architecture":
     """
@@ -19,10 +19,27 @@ module checker
     wins on collision). Class names registered as constructor functions in scope.
     Constants registered in scope.
 
+    Phase 1.5 (register_interface_methods): Links impl blocks to concrete
+    types across block boundaries. Registers interface methods on concrete
+    classes, including labeled methods injected by relational ownership.
+
+    Phase 1.6 (validate_relation_hints): Enforces structural invariants on
+    interfaces used as relational hints — exactly two type params, all
+    members annotated with a side.
+
+    Phase 1.7 (validate_impl_satisfies_abstract): Verifies every plain impl
+    block provides implementations for all abstract members of its target
+    interface.
+
     Phase 2 (check_lyric_block_bodies): Walks function bodies performing type
     inference and validation. Each expression returns its inferred Type AND
     gets annotated via annotate(expr, type) which converts the internal Type
     to a TypeExpr and sets expr.resolved_type. This is the checker→lowerer contract.
+
+    Post-Phase 2 Validation: A suite of validators runs after all phases —
+    validate_all_exprs_resolved, validate_field_and_method_access,
+    validate_all_types_resolved, validate_where_clauses, and
+    validate_subscope_collisions — to ensure the integrity of the annotated AST.
 
     CRITICAL: check_file runs Phase 0 across ALL blocks, then Phase 1 across
     ALL blocks, then Phase 2 across ALL blocks. This ensures cross-file type
@@ -288,6 +305,29 @@ module checker
     at ib.span.
     """
 
+  invariant "Post-Phase 2 Validation Suite":
+    procedural
+    """
+    After all three phases complete, check_file runs a suite of validators
+    to ensure the integrity of the annotated AST:
+
+    1. validate_all_exprs_resolved: walks every expression in the file and
+       verifies that resolved_type is non-nil. Unresolved expressions would
+       cause the lowerer to emit void* fallbacks.
+    2. validate_field_and_method_access: checks that every field access and
+       method call targets a member that actually exists on the receiver type.
+    3. validate_all_types_resolved: ensures no unresolved TypeExpr nodes
+       remain in the AST.
+    4. validate_where_clauses: checks that where-clause constraints are
+       satisfiable.
+    5. validate_subscope_collisions: detects conflicting sub-scope label
+       names that would produce ambiguous dotted-scope resolution.
+
+    These validators act as a safety net — if any phase silently dropped
+    an annotation or registered a type incorrectly, the validators catch
+    it before the lowerer runs.
+    """
+
   typedef TypeKind: enum { Int, Uint, Float, Bool, String, Void, Nil, Any, Error, Lock, Optional(inner: Type), Sequence(elem: Type), Map(key: Type, value: Type), Tuple(fields: [TupleFieldType]), Func(params: [Type], ret: Type, type_param_names: [string]), Struct(name: string), Class(name: string), Enum(name: string), Interface(name: string), TypeVar(name: string), Channel(elem: Type), Generator(elem: Type), ErrorResult(ok: Type, err: Type), Module(name: string), Union(variants: [Type]) }
     source: checker.ly:19
 
@@ -307,367 +347,407 @@ module checker
 
   class TypeInfo
     source: checker.ly:59
+    why: "Registry entry for a named type — holds fields, methods, variants, type params, and implements list for the type registered in the global Registry."
     field field_order: [string]
     field fields: Dict<Sym, Type>
     field implements_list: [string]
     field methods: Dict<Sym, Type>
+    field sub_scope_labels: Dict<Sym, bool>
     field type_param_constraints: [string]
     field type_param_names: [string]
     field type_val: Type
     field variants: Dict<Sym, VariantInfo>
 
   class VariantInfo
-    source: checker.ly:70
+    source: checker.ly:71
+    why: "Describes a single enum variant — its parent enum name and the fields it carries (empty for unit variants)."
     field enum_name: string
     field fields: [VariantField]
 
   struct VariantField
-    source: checker.ly:75
+    source: checker.ly:76
+    why: "A single field within an enum variant — name and type."
     field name: string
     field type_val: Type
 
   class Scope
-    source: checker.ly:84
+    source: checker.ly:85
+    why: "Linked list of Dict<Sym, Type> levels for variable resolution. lookup walks the parent chain; define adds to the current level."
     field parent: Scope?
     field vars: Dict<Sym, Type>
     method lookup(self, name: string) -> Type?
-      source: checker.ly:93
+      source: checker.ly:94
     method define(self, name: string, t: Type)
-      source: checker.ly:104
+      source: checker.ly:105
 
   func new_scope(parent: Scope?) -> Scope
-    source: checker.ly:89
+    source: checker.ly:90
 
   class Registry
-    source: checker.ly:112
+    source: checker.ly:113
+    why: "Global symbol table for all named types. Keyed by type name, stores TypeInfo entries with full field/method/variant detail."
     field types: Dict<Sym, TypeInfo>
     method register(self, name: string, info: TypeInfo)
-      source: checker.ly:120
+      source: checker.ly:121
     method lookup(self, name: string) -> TypeInfo?
-      source: checker.ly:135
+      source: checker.ly:136
 
   func new_registry() -> Registry
-    source: checker.ly:116
+    source: checker.ly:117
 
   class Checker
-    source: checker.ly:166
+    source: checker.ly:154
+    why: "Central state for semantic analysis. Maintains the type registry, scope chain, error list, and per-function context. Orchestrated by check_file which drives the multi-phase pipeline. Consumes a desugared AST and produces a fully annotated AST where every expression carries a resolved_type — the contract consumed by the lowerer."
+    field current_func: FuncDecl?
+      doc: "The function currently being checked — used to resolve self type and impl aliases."
     field current_func_name: string
     field current_func_return: Type?
+      doc: "Expected return type of the current function — used by check_return for validation."
     field errors: [string]
+      doc: "Semantic errors accumulated during checking, each prefixed with source location."
     field iface_decls: Dict<Sym, InterfaceDecl>
+      doc: "Interface AST nodes indexed by name — used by Phase 1.6/1.7 validation to inspect members."
     field in_trusted: bool
     field method_type_args: Dict<Sym, [TypeExpr]>
     field registry: Registry
+      doc: "Global symbol table for all named types."
     field scope: Scope
+      doc: "Current resolution scope — linked list of Dict levels; lookup walks parent chain."
     field type_var_methods: Dict<Sym, Dict<Sym, Type>>?
     method push_scope(self)
-      source: checker.ly:192
+      source: checker.ly:193
     method pop_scope(self)
-      source: checker.ly:196
+      source: checker.ly:197
     method register_builtins(self)
-      source: checker.ly:312
+      source: checker.ly:313
     method register_primitive_type(self, name: string, t: Type)
-      source: checker.ly:335
+      source: checker.ly:336
     method register_go_stdlib_modules(self)
-      source: checker.ly:350
+      source: checker.ly:352
     method is_assignable(self, src: Type, to: Type) -> bool
-      source: checker.ly:568
+      source: checker.ly:570
+      why: "Implements Lyric's subtyping rules: nil→optional/class/interface, Any↔anything, TypeVar↔anything, structural interface subtyping, union compatibility, numeric widening."
     method infer_type_args(self, func_type: Type, arg_types: [Type]) -> Dict<Sym, Type>
-      source: checker.ly:903
+      source: checker.ly:905
+      why: "Compares concrete argument types against generic function parameter patterns via match_type_vars to bind type variables."
     method error(self, msg: string)
-      source: checker.ly:935
+      source: checker.ly:945
     method error_at(self, span: Span, msg: string)
-      source: checker.ly:939
+      source: checker.ly:949
     method resolve_type_expr(self, te: TypeExpr) -> Type
-      source: checker.ly:1111
+      source: checker.ly:1121
+      why: "Converts an AST TypeExpr into the checker's internal Type representation, resolving named types through the registry."
     method resolve_named_type(self, name: string, args: [TypeExpr], span: Span) -> Type
-      source: checker.ly:1175
+      source: checker.ly:1185
     method func_decl_to_type(self, f: FuncDecl) -> Type
-      source: checker.ly:1225
+      source: checker.ly:1240
     method preregister_type_names(self, block: LyricBlock)
-      source: checker.ly:1271
+      source: checker.ly:1286
+      why: "Phase 0: registers stub TypeInfo for every struct/class/enum/interface by name. Also registers imports as module types."
     method register_lyric_block(self, block: LyricBlock)
-      source: checker.ly:1355
+      source: checker.ly:1374
+      why: "Phase 1: registers full type/function detail — interfaces, structs, classes, enums, top-level functions, constants into registries and scope."
     method register_interface_methods(self, file: File)
-      source: checker.ly:1443
+      source: checker.ly:1463
+      why: "Phase 1.5: links impl blocks to concrete types across block boundaries, registering interface methods on concrete classes."
     method register_interface(self, iface: InterfaceDecl)
-      source: checker.ly:1693
+      source: checker.ly:1709
     method register_struct(self, s: StructDecl)
-      source: checker.ly:1762
+      source: checker.ly:1779
     method register_class(self, cls: ClassDecl)
-      source: checker.ly:1828
+      source: checker.ly:1846
     method register_enum(self, e: EnumDecl)
-      source: checker.ly:1961
+      source: checker.ly:2018
     method check_implements(self, cls: ClassDecl)
-      source: checker.ly:2030
+      source: checker.ly:2088
     method register_impl_methods(self, ib: ImplBlock)
-      source: checker.ly:2043
+      source: checker.ly:2101
     method register_func(self, f: FuncDecl)
-      source: checker.ly:2135
+      source: checker.ly:2193
     method grant_relational_methods(self, iface_name: string, type_args: [TypeExpr])
-      source: checker.ly:2166
+      source: checker.ly:2230
     method func_decl_to_type_with_subst(self, f: FuncDecl, subst: Dict<Sym, string>) -> Type
-      source: checker.ly:2219
+      source: checker.ly:2287
     method check_lyric_block_bodies(self, block: LyricBlock)
-      source: checker.ly:2262
+      source: checker.ly:2330
+      why: "Phase 2: walks function bodies performing type inference, validation, and expression annotation."
     method check_func_body(self, f: FuncDecl)
-      source: checker.ly:2370
+      source: checker.ly:2438
     method check_block(self, block: Block)
-      source: checker.ly:2490
+      source: checker.ly:2561
     method check_stmt(self, stmt: Stmt)
-      source: checker.ly:2497
+      source: checker.ly:2568
     method check_var_decl(self, name: Sym, names: [Sym], type_expr: TypeExpr?, is_mut: bool, value: Expr?)
-      source: checker.ly:2626
+      source: checker.ly:2697
     method check_assign(self, target: Expr, value: Expr)
-      source: checker.ly:2695
+      source: checker.ly:2775
     method check_return(self, value: Expr?)
-      source: checker.ly:2723
+      source: checker.ly:2803
     method check_if(self, condition: Expr, then_block: Block, else_ifs: [ElseIf], else_block: Block?)
-      source: checker.ly:2743
+      source: checker.ly:2823
     method check_for(self, var_name: Sym, index_var: Sym?, collection: Expr, body: Block)
-      source: checker.ly:2765
+      source: checker.ly:2845
     method check_while(self, condition: Expr, body: Block)
-      source: checker.ly:2811
+      source: checker.ly:2891
     method check_match(self, value: Expr, arms: [MatchArm])
-      source: checker.ly:2818
+      source: checker.ly:2898
     method bind_pattern(self, pat: Pattern, val_type: Type)
-      source: checker.ly:2842
+      source: checker.ly:2922
     method check_expr(self, expr: Expr) -> Type
-      source: checker.ly:2902
+      source: checker.ly:2982
       why: "Primary expression-checking entry point. Calls check_expr_inner for type inference, then annotate(expr, type) which sets expr.resolved_type — the checker→lowerer contract."
     method check_expr_inner(self, expr: Expr) -> Type
-      source: checker.ly:2907
+      source: checker.ly:2987
     method check_unary(self, op: UnaryOp, operand: Expr) -> Type
-      source: checker.ly:2998
+      source: checker.ly:3078
     method check_binary(self, left: Expr, op: BinaryOp, right: Expr) -> Type
-      source: checker.ly:3007
+      source: checker.ly:3087
     method check_index(self, receiver: Expr, index: Expr) -> Type
-      source: checker.ly:3046
+      source: checker.ly:3126
     method check_slice(self, receiver: Expr, low: Expr?, high: Expr?) -> Type
-      source: checker.ly:3060
+      source: checker.ly:3140
     method check_cast(self, target_type: TypeExpr, operand: Expr) -> Type
-      source: checker.ly:3067
-    method check_unwrap(self, operand: Expr) -> Type
-      source: checker.ly:3072
-    method check_try(self, operand: Expr) -> Type
-      source: checker.ly:3080
-    method check_is(self, operand: Expr, variant: Sym) -> Type
-      source: checker.ly:3100
-    method check_if_else_expr(self, cond: Expr, then_block: Block, else_ifs: [ElseIf], else_block: Block) -> Type
-      source: checker.ly:3105
-    method check_block_expr_type(self, block: Block) -> Type
-      source: checker.ly:3130
-    method check_tuple_lit(self, elems: [Expr]) -> Type
       source: checker.ly:3147
+    method check_unwrap(self, operand: Expr) -> Type
+      source: checker.ly:3152
+    method check_try(self, operand: Expr) -> Type
+      source: checker.ly:3160
+    method check_is(self, operand: Expr, variant: Sym) -> Type
+      source: checker.ly:3180
+    method check_if_else_expr(self, cond: Expr, then_block: Block, else_ifs: [ElseIf], else_block: Block) -> Type
+      source: checker.ly:3185
+    method check_block_expr_type(self, block: Block) -> Type
+      source: checker.ly:3210
+    method check_tuple_lit(self, elems: [Expr]) -> Type
+      source: checker.ly:3227
     method check_list_lit(self, elems: [Expr]) -> Type
-      source: checker.ly:3156
+      source: checker.ly:3236
     method check_map_lit(self, keys: [Expr], values: [Expr]) -> Type
-      source: checker.ly:3167
+      source: checker.ly:3247
     method check_struct_lit(self, type_name_sym: Sym, type_args: [TypeExpr], fields: [StructLitField]) -> Type
-      source: checker.ly:3189
+      source: checker.ly:3269
     method check_lambda(self, params: [Param], return_type: TypeExpr?, body: Block) -> Type
-      source: checker.ly:3312
+      source: checker.ly:3392
     method check_match_expr(self, value: Expr, arms: [MatchArm]) -> Type
-      source: checker.ly:3334
+      source: checker.ly:3414
     method check_call(self, call_expr: Expr, func_expr: Expr, type_args: [TypeExpr], args: [Expr]) -> Type
-      source: checker.ly:3391
+      source: checker.ly:3471
     method resolve_module_func(self, mod_name: string, func_name: string) -> Type
-      source: checker.ly:3506
+      source: checker.ly:3586
     method check_builtin_call(self, name: string, type_args: [TypeExpr], arg_types: [Type]) -> Type?
-      source: checker.ly:3548
+      source: checker.ly:3628
     method build_type_arg_subst(self, recv_type: Type) -> Dict<Sym, Type>?
-      source: checker.ly:3666
+      source: checker.ly:3746
+    method try_resolve_impl_alias_method(self, call_expr: Expr, receiver: Expr, method: Sym, type_args: [TypeExpr], args: [Expr], recv_type: Type) -> Type?
+      source: checker.ly:3775
     method check_method_call(self, call_expr: Expr, receiver: Expr, method: Sym, type_args: [TypeExpr], args: [Expr]) -> Type
-      source: checker.ly:3685
+      source: checker.ly:3870
+      why: "Resolves method calls including dotted-scope rewriting for relational sub-scopes (obj.label.method → obj.__label_method)."
     method check_builtin_method(self, recv_type: Type, method: string, arg_types: [Type]) -> Type?
-      source: checker.ly:3919
+      source: checker.ly:4113
     method check_list_method(self, elem: Type, method: string) -> Type?
-      source: checker.ly:3938
+      source: checker.ly:4132
     method check_string_method(self, method: string) -> Type?
-      source: checker.ly:3953
+      source: checker.ly:4147
     method check_channel_method(self, elem: Type, method: string) -> Type?
-      source: checker.ly:3966
+      source: checker.ly:4160
     method check_map_method(self, key: Type, value: Type, method: string) -> Type?
-      source: checker.ly:3973
+      source: checker.ly:4167
     method check_field_access(self, parent_expr: Expr, receiver: Expr, field_name: Sym) -> Type
-      source: checker.ly:3990
+      source: checker.ly:4184
+      why: "Resolves field access including dotted-scope rewriting for relational sub-scopes (obj.label.field → obj.__label_field)."
     method resolve_field_type(self, recv_type: Type, field_str: string) -> Type
-      source: checker.ly:4060
+      source: checker.ly:4255
     method walk_expr(self, expr: Expr, callback: (Expr) -> ())
-      source: checker.ly:4144
+      source: checker.ly:4368
     method walk_stmt(self, stmt: Stmt, callback: (Expr) -> ())
-      source: checker.ly:4229
+      source: checker.ly:4453
     method walk_block(self, block: Block, callback: (Expr) -> ())
-      source: checker.ly:4302
+      source: checker.ly:4526
     method walk_pattern(self, pat: Pattern, callback: (Expr) -> ())
-      source: checker.ly:4307
+      source: checker.ly:4531
     method type_expr_has_typevar(self, te: TypeExpr) -> bool
-      source: checker.ly:4347
+      source: checker.ly:4571
     method find_typevar_name(self, te: TypeExpr) -> string
-      source: checker.ly:4402
+      source: checker.ly:4626
     method validate_all_exprs_resolved(self, file: File)
-      source: checker.ly:4448
+      source: checker.ly:4672
+      why: "Post-phase validator: walks every expression and verifies resolved_type is non-nil."
     method vwalk_block(self, block: Block, ctx: string)
-      source: checker.ly:4483
+      source: checker.ly:4720
     method vwalk_stmt(self, stmt: Stmt, ctx: string)
-      source: checker.ly:4490
+      source: checker.ly:4727
     method vwalk_pattern(self, pat: Pattern, ctx: string)
-      source: checker.ly:4566
+      source: checker.ly:4803
     method vwalk_expr(self, expr: Expr, ctx: string)
-      source: checker.ly:4581
+      source: checker.ly:4818
     method validate_field_and_method_access(self, file: File)
-      source: checker.ly:4687
+      source: checker.ly:4924
+      why: "Post-phase validator: checks that every field access and method call targets a member that exists on the receiver type."
     method validate_access_block(self, block: Block)
-      source: checker.ly:4715
+      source: checker.ly:4952
     method validate_access_stmt(self, stmt: Stmt)
-      source: checker.ly:4722
+      source: checker.ly:4959
     method validate_access_expr(self, expr: Expr)
-      source: checker.ly:4790
+      source: checker.ly:5027
     method validate_field_access(self, receiver: Expr, field_name: Sym)
-      source: checker.ly:4865
+      source: checker.ly:5102
     method validate_method_access(self, receiver: Expr, method: Sym)
-      source: checker.ly:4897
+      source: checker.ly:5134
     method validate_all_types_resolved(self, file: File)
-      source: checker.ly:4937
-    method validate_relation_hints(self, file: File)
-      source: checker.ly:4974
+      source: checker.ly:5174
+      why: "Post-phase validator: ensures no unresolved TypeExpr nodes remain in the AST."
+    method validate_where_clauses(self, file: File)
+      source: checker.ly:5221
+      why: "Post-phase validator: checks that where-clause constraints are satisfiable."
     method validate_subscope_collisions(self, file: File)
-      source: checker.ly:5026
+      source: checker.ly:5279
+      why: "Post-phase validator: detects conflicting sub-scope label names that would produce ambiguous dotted-scope resolution."
+    method validate_relation_hints(self, file: File)
+      source: checker.ly:5322
+      why: "Phase 1.6: enforces structural invariants on interfaces used as relational hints — exactly two type params, all members annotated with a side."
     method validate_one_hint_interface(self, ib: ImplBlock, iface: InterfaceDecl)
-      source: checker.ly:4994
+      source: checker.ly:5342
     method validate_impl_satisfies_abstract(self, file: File)
-      source: checker.ly:5067
+      source: checker.ly:5432
+      why: "Phase 1.7: verifies every plain impl block satisfies all abstract members of its target interface."
     method validate_one_impl_satisfies(self, ib: ImplBlock, class_decls: Dict<Sym, ClassDecl>)
-      source: checker.ly:5091
+      source: checker.ly:5456
 
   func new_checker() -> Checker
     source: checker.ly:178
 
   func make_int_type(bits: i32) -> Type
-    source: checker.ly:206
+    source: checker.ly:207
 
   func make_uint_type(bits: i32) -> Type
-    source: checker.ly:210
+    source: checker.ly:211
 
   func make_float_type(bits: i32) -> Type
-    source: checker.ly:214
+    source: checker.ly:215
 
   func make_bool_type() -> Type
-    source: checker.ly:218
+    source: checker.ly:219
 
   func make_string_type() -> Type
-    source: checker.ly:222
+    source: checker.ly:223
 
   func make_void_type() -> Type
-    source: checker.ly:226
+    source: checker.ly:227
 
   func make_nil_type() -> Type
-    source: checker.ly:230
+    source: checker.ly:231
 
   func make_any_type() -> Type
-    source: checker.ly:234
+    source: checker.ly:235
 
   func make_error_type() -> Type
-    source: checker.ly:238
+    source: checker.ly:239
 
   func make_lock_type() -> Type
-    source: checker.ly:242
+    source: checker.ly:243
 
   func make_union_type(variants: [Type]) -> Type
-    source: checker.ly:246
+    source: checker.ly:247
 
   func make_optional_type(inner: Type) -> Type
-    source: checker.ly:250
+    source: checker.ly:251
 
   func make_sequence_type(elem: Type) -> Type
-    source: checker.ly:254
+    source: checker.ly:255
 
   func make_map_type(key: Type, value: Type) -> Type
-    source: checker.ly:258
+    source: checker.ly:259
 
   func make_tuple_type(fields: [TupleFieldType]) -> Type
-    source: checker.ly:262
+    source: checker.ly:263
 
   func make_func_type(params: [Type], ret: Type, tpnames: [string]) -> Type
-    source: checker.ly:266
+    source: checker.ly:267
 
   func make_channel_type(elem: Type) -> Type
-    source: checker.ly:270
+    source: checker.ly:271
 
   func make_generator_type(elem: Type) -> Type
-    source: checker.ly:274
+    source: checker.ly:275
 
   func make_error_result_type(ok: Type, err: Type) -> Type
-    source: checker.ly:280
+    source: checker.ly:281
 
   func make_typevar_type(name: string) -> Type
-    source: checker.ly:284
+    source: checker.ly:285
 
   func make_struct_type(name: string) -> Type
-    source: checker.ly:288
+    source: checker.ly:289
 
   func make_class_type(name: string) -> Type
-    source: checker.ly:292
+    source: checker.ly:293
 
   func make_enum_type(name: string) -> Type
-    source: checker.ly:296
+    source: checker.ly:297
 
   func make_interface_type(name: string) -> Type
-    source: checker.ly:300
+    source: checker.ly:301
 
   func make_module_type(name: string) -> Type
-    source: checker.ly:304
+    source: checker.ly:305
 
   func type_name(t: Type) -> string
-    source: checker.ly:362
+    source: checker.ly:364
 
   func types_equal(a: Type, b: Type) -> bool
-    source: checker.ly:395
+    source: checker.ly:397
 
   func numeric_widens(src: Type, to: Type) -> bool
-    source: checker.ly:530
+    source: checker.ly:532
 
   func is_numeric(t: Type) -> bool
-    source: checker.ly:702
+    source: checker.ly:704
 
   func is_integer(t: Type) -> bool
-    source: checker.ly:709
+    source: checker.ly:711
 
   func is_error_type(t: Type) -> bool
-    source: checker.ly:716
+    source: checker.ly:718
 
   func match_type_vars(pattern: Type, concrete: Type, bindings: Dict<Sym, Type>) -> bool
-    source: checker.ly:730
+    source: checker.ly:732
+    why: "Compares a generic pattern type against a concrete type, binding TypeVar names to concrete types in the bindings dict. Used by infer_type_args."
 
   func substitute_type(t: Type, bindings: Dict<Sym, Type>) -> Type
-    source: checker.ly:833
+    source: checker.ly:835
+    why: "Replaces TypeVar nodes in a type with their concrete bindings from a substitution dict."
 
   func satisfies_constraint(t: Type, constraint: string) -> bool
-    source: checker.ly:919
+    source: checker.ly:929
 
   func type_to_type_expr(t: Type) -> TypeExpr
-    source: checker.ly:948
+    source: checker.ly:958
+    why: "Converts internal Type back to an AST TypeExpr — used by annotate() to set expr.resolved_type for the lowerer."
 
   func annotate(expr: Expr, t: Type) -> Type
-    source: checker.ly:1074
+    source: checker.ly:1084
+    why: "Sets expr.resolved_type by converting Type to TypeExpr via type_to_type_expr. Returns the type for chaining. This is the checker→lowerer contract."
 
   func type_contains_var(t: Type) -> bool
-    source: checker.ly:1080
+    source: checker.ly:1090
 
   func subst_type_var_names(t: Type, subst: Dict<Sym, string>) -> Type
-    source: checker.ly:2238
+    source: checker.ly:2306
 
   func propagate_arg_types(args: [Expr], param_types: [Type])
-    source: checker.ly:3368
+    source: checker.ly:3448
 
   func coerce_numeric(a: Type, b: Type) -> Type
-    source: checker.ly:4125
+    source: checker.ly:4349
+    why: "Returns the wider numeric type for binary operations — same-sign integers widen to larger bit width, floats widen f32→f64."
 
   func is_primitive_name(n: string) -> bool
-    source: checker.ly:4324
+    source: checker.ly:4548
 
   func sym_to_string(s: Sym) -> string
-    source: checker.ly:5062
+    source: checker.ly:5582
 
   func check_file(file: File) -> Checker
-    source: checker.ly:5070
+    source: checker.ly:5590
+    why: "Primary entry point: orchestrates the entire multi-phase pipeline (Phase 0→1→1.5→1.6→1.7→2→validators) and returns the Checker with annotated AST and accumulated errors."

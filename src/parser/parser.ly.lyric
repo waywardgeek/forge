@@ -4,24 +4,43 @@ module parser
 
   doc "Architecture":
     """
-    Linear pipeline: Token stream → AST.
+    Hybrid parsing strategy: recursive descent for top-level declarations,
+    Pratt (precedence climbing) for expressions. This dual approach handles
+    the LL(1) nature of Lyric's high-level structure while efficiently
+    managing complex operator precedence and associativity.
 
-    1. Declaration parsing (parser.ly): recursive descent for top-level
+    Data flow is a linear pipeline: Token stream → AST.
+
+    1. Initialization: new_parser() creates a Parser with its Lexer.
+
+    2. Top-level orchestration: do_parse_file() handles optional `lyric`
+       block headers and derives implicit module names from filenames.
+
+    3. Declaration parsing (parser.ly): recursive descent for top-level
        constructs (struct, class, enum, func, interface, relation, impl).
        Each has a parse_* method. LL(1) with state save/restore for
        ambiguous cases.
 
-    2. Expression parsing (expr_parser.ly): Pratt/precedence climbing with
-       10 binary precedence levels. Unary prefix handled before the
-       precedence loop. Postfix ops (field access, method call, index,
-       function call) in a tight loop.
+    4. Expression parsing (expr_parser.ly): Pratt/precedence climbing with
+       12 distinct levels (PREC_OR through PREC_POSTFIX). Unary prefix
+       handled before the precedence loop. Postfix ops (field access,
+       method call, index, function call) in a tight loop within
+       parse_postfix_expr for performance.
 
-    3. Statement parsing (expr_parser.ly): dispatches on current token kind
+    5. Statement parsing (expr_parser.ly): dispatches on current token kind
        to parse_var_decl, parse_if, parse_for, parse_while, parse_match_stmt,
-       etc.
+       parse_spawn, parse_select, parse_lock, etc.
+
+    6. AST production: output is an ast.File containing the complete
+       structured representation, ready for desugaring and semantic analysis.
 
     Both files share the Parser class (same lyric block name), live in the
-    same package, and are compiled together.
+    same package, and are compiled together. The parser is self-hosted
+    (written in Lyric).
+
+    Parser state is minimal: a Lexer reference, a single-token lookahead
+    buffer (pushed), an expr_depth counter for nested contexts, and the
+    no_struct_lit flag for resolving syntactic ambiguities.
     """
 
   invariant "For Loops":
@@ -56,23 +75,35 @@ module parser
       - Generic call-site disambiguation: try_parse_type_args() attempts to
         parse <TypeExpr, ...> followed by `(`. If `>` isn't followed by `(`,
         backtracks and treats `<` as comparison.
-      - Struct literal detection (is_struct_lit_ahead).
+      - Struct literal detection (is_struct_lit_ahead): peeks ahead to see
+        if `{` is followed by field-like patterns (`ident:` or `..`).
+      - Paren-lambda detection (is_paren_lambda_ahead): determines if a
+        parenthesized list is the start of a lambda expression
+        `(a: i32) -> ...` vs a grouped expression `(a + b)`.
       - Annotation vs field detection (peek_annotation / is_why_annotation).
     """
 
   invariant "Pratt Precedence Levels":
     procedural
     """
-    Level  1: || (logical or)
-    Level  2: && (logical and)
-    Level  3: == != (equality)
-    Level  4: < <= > >= (comparison)
-    Level  5: | (bitwise or)
-    Level  6: ^ (bitwise xor)
-    Level  7: & (bitwise and)
-    Level  8: << >> (shifts)
-    Level  9: + - (additive)
-    Level 10: * / % (multiplicative)
+    12 levels, lowest to highest (from expr_parser.ly constants):
+
+    Level  0: PREC_NONE (no precedence — sentinel)
+    Level  1: || (logical or)        PREC_OR
+    Level  2: && (logical and)       PREC_AND
+    Level  3: | (bitwise or)         PREC_BIT_OR
+    Level  4: ^ (bitwise xor)        PREC_BIT_XOR
+    Level  5: & (bitwise and)        PREC_BIT_AND
+    Level  6: == != (equality)       PREC_EQUALITY
+    Level  7: < <= > >= (comparison) PREC_COMPARISON
+    Level  8: << >> (shifts)         PREC_SHIFT
+    Level  9: + - (additive)         PREC_ADDITIVE
+    Level 10: * / % (multiplicative) PREC_MULT
+    Level 11: - ! (unary prefix)     PREC_UNARY
+    Level 12: . () [] (postfix)      PREC_POSTFIX
+
+    binary_prec() maps TokenKind to levels 1-10; unary and postfix
+    are handled separately in parse_unary_expr and parse_postfix_expr.
 
     Compound assignment (+=, -=, *=, /=) is desugared in the parser:
     `x += y` becomes `x = x + y` at the AST level.
@@ -126,6 +157,67 @@ module parser
     owns for ConcreteType { ... }` parses), and both precede the body.
     No today's user code uses the new form; downstream consumers
     (desugar / checker) read the new field in follow-on commits.
+    """
+
+  invariant "Relation Parsing":
+    procedural
+    """
+    parse_relation handles the complex syntax for ownership relations:
+      relation Name<ParentType, ChildType> { ... }
+    Each side can carry hints (parent_hint, child_hint) and
+    owns/refs annotations. parse_relation_side() reads the side
+    declarations including the type name, optional hint binding,
+    and the ownership qualifier.
+
+    Relations are a high-level construct that the desugar phase
+    expands into interfaces and impl blocks — the parser just
+    captures the syntactic structure faithfully.
+    """
+
+  invariant "Pattern Matching":
+    procedural
+    """
+    parse_pattern handles:
+      - Wildcard: `_`
+      - Literals: integers, strings, booleans
+      - Identifiers: plain names that bind the matched value
+      - Variant patterns: `EnumName::Variant(bindings...)`
+      - Struct patterns: `StructName { field1, field2: binding }`
+      - Tuple patterns: `(a, b, c)`
+      - Rest patterns: `..` for ignoring remaining fields/elements
+
+    Patterns appear in match arms, if-let, let-else, and for loops.
+    The parser produces Pattern AST nodes; semantic validation
+    (exhaustiveness, type compatibility) happens in the checker.
+    """
+
+  doc "Dependencies":
+    """
+    Strictly hierarchical dependency profile:
+
+    - src/lexer: Provides the Lexer and Token stream. The parser relies
+      on the lexer's state-saving capabilities (save_state/restore_state)
+      for lookahead and trial parsing.
+    - src/ast: Defines the target data structures (File, Expr, Stmt,
+      Pattern, Decl nodes). The parser instantiates and populates these.
+    - stdlib: String manipulation, symbol management (sym), and error
+      reporting utilities.
+
+    The parser has no reverse dependencies on downstream phases
+    (desugar, checker, codegen). It is a pure source-to-AST transform.
+    """
+
+  doc "Technical Debt":
+    """
+    - Error Recovery: Currently fail-fast. Implementing "panic mode"
+      recovery (skip to next semicolon or brace) would allow reporting
+      multiple errors in a single pass.
+    - Incremental Parsing: Re-parsing only modified blocks (instead of
+      entire files) would improve IDE performance.
+    - Formal Grammar: A complete EBNF or PEG specification would serve
+      as a reference for language evolution and alternative tooling.
+    - Performance: Further optimization of token buffering and AST node
+      allocation for very large source files.
     """
 
   func binary_prec(kind: TokenKind) -> i32
@@ -182,48 +274,48 @@ module parser
     method parse_stmt(self) -> (Stmt?, error)
       source: expr_parser.ly:749
     method parse_var_decl(self) -> (Stmt?, error)
-      source: expr_parser.ly:798
+      source: expr_parser.ly:797
     method is_pattern_let_ahead(self) -> bool
-      source: expr_parser.ly:865
+      source: expr_parser.ly:864
     method parse_let_else(self, start: Pos, is_mut: bool) -> (Stmt?, error)
-      source: expr_parser.ly:881
+      source: expr_parser.ly:880
     method parse_return(self) -> (Stmt?, error)
-      source: expr_parser.ly:895
+      source: expr_parser.ly:894
     method parse_yield(self) -> (Stmt?, error)
-      source: expr_parser.ly:910
+      source: expr_parser.ly:909
     method parse_if(self) -> (Stmt?, error)
-      source: expr_parser.ly:922
+      source: expr_parser.ly:921
     method parse_if_let(self, start: Pos) -> (Stmt?, error)
-      source: expr_parser.ly:962
+      source: expr_parser.ly:961
     method parse_for(self) -> (Stmt?, error)
-      source: expr_parser.ly:983
+      source: expr_parser.ly:982
     method parse_while(self) -> (Stmt?, error)
-      source: expr_parser.ly:1014
+      source: expr_parser.ly:1013
     method parse_match_stmt(self) -> (Stmt?, error)
-      source: expr_parser.ly:1027
+      source: expr_parser.ly:1026
     method parse_match_arms(self) -> ([MatchArm], error)
-      source: expr_parser.ly:1041
+      source: expr_parser.ly:1040
     method parse_pattern(self) -> (Pattern?, error)
-      source: expr_parser.ly:1068
+      source: expr_parser.ly:1067
     method parse_spawn(self) -> (Stmt?, error)
-      source: expr_parser.ly:1188
+      source: expr_parser.ly:1175
     method parse_select(self) -> (Stmt?, error)
-      source: expr_parser.ly:1200
+      source: expr_parser.ly:1187
     method parse_select_case(self) -> (SelectCase?, error)
-      source: expr_parser.ly:1218
+      source: expr_parser.ly:1205
     method parse_lock(self) -> (Stmt?, error)
-      source: expr_parser.ly:1254
+      source: expr_parser.ly:1241
     method parse_expr_or_assign(self) -> (Stmt?, error)
-      source: expr_parser.ly:1269
+      source: expr_parser.ly:1256
     method is_struct_lit_ahead(self) -> bool
-      source: expr_parser.ly:1337
+      source: expr_parser.ly:1324
       why: "Resolves the `Ident {` ambiguity (struct literal vs variable + block) by lookahead. Returns false unconditionally when no_struct_lit is set, which is how for/while/if/match conditions exclude struct literals without parens."
     method parse_struct_lit(self, name: Sym, type_args: [TypeExpr], start: Pos) -> (Expr?, error)
-      source: expr_parser.ly:1366
+      source: expr_parser.ly:1353
     method parse_fstring(self, tok: Token) -> (Expr?, error)
-      source: expr_parser.ly:1407
+      source: expr_parser.ly:1394
     method try_parse_type_args(self) -> [TypeExpr]?
-      source: expr_parser.ly:1463
+      source: expr_parser.ly:1450
     method peek(self) -> Token
       source: parser.ly:32
     method next(self) -> Token
@@ -239,63 +331,63 @@ module parser
     method expect_ident(self) -> (Token?, error)
       source: parser.ly:70
     method make_span(self, start: Pos) -> Span
-      source: parser.ly:90
+      source: parser.ly:89
     method peek_annotation(self) -> TokenKind?
-      source: parser.ly:97
+      source: parser.ly:96
     method consume_annotation(self, kind: TokenKind) -> bool
-      source: parser.ly:110
+      source: parser.ly:109
     method do_parse_file(self) -> (File?, error)
-      source: parser.ly:122
+      source: parser.ly:121
     method parse_lyric_block(self) -> (LyricBlock?, error)
-      source: parser.ly:141
+      source: parser.ly:140
     method parse_lyric_item(self, block: LyricBlock) -> (bool, error)
-      source: parser.ly:188
+      source: parser.ly:187
     method parse_import(self) -> (ImportDecl?, error)
-      source: parser.ly:302
+      source: parser.ly:301
     method parse_type_alias(self) -> (TypeAliasDecl?, error)
-      source: parser.ly:337
+      source: parser.ly:333
     method parse_field(self) -> (Field?, error)
-      source: parser.ly:353
+      source: parser.ly:349
     method parse_param(self) -> (Param?, error)
-      source: parser.ly:381
+      source: parser.ly:377
     method parse_tuple_field(self) -> (TupleField?, error)
-      source: parser.ly:418
+      source: parser.ly:414
     method parse_type_params(self) -> ([TypeParam], error)
-      source: parser.ly:437
+      source: parser.ly:433
     method parse_struct(self) -> (StructDecl?, error)
-      source: parser.ly:460
+      source: parser.ly:456
     method parse_enum(self) -> (EnumDecl?, error)
-      source: parser.ly:492
+      source: parser.ly:488
     method parse_enum_variant(self) -> (EnumVariant?, error)
-      source: parser.ly:519
+      source: parser.ly:515
     method parse_interface(self) -> (InterfaceDecl?, error)
-      source: parser.ly:544
+      source: parser.ly:540
     method parse_interface_field(self) -> (InterfaceFieldDecl?, error)
-      source: parser.ly:621
+      source: parser.ly:634
     method parse_destructor_block(self) -> (DestructorBlock?, error)
-      source: parser.ly:659
+      source: parser.ly:650
     method parse_impl(self) -> (ImplBlock?, error)
-      source: parser.ly:656
+      source: parser.ly:674
     method parse_impl_mapping_short(self, for_type: Sym) -> (ImplMapping?, error)
-      source: parser.ly:725
+      source: parser.ly:755
     method parse_impl_mapping(self) -> (ImplMapping?, error)
-      source: parser.ly:787
+      source: parser.ly:817
     method parse_class(self) -> (ClassDecl?, error)
-      source: parser.ly:860
+      source: parser.ly:890
     method parse_func(self) -> (FuncDecl?, error)
-      source: parser.ly:961
+      source: parser.ly:991
     method parse_const_decl(self) -> (ConstDecl?, error)
-      source: parser.ly:1029
-    method parse_where_clause(self) -> (WhereClause?, error)
       source: parser.ly:1059
+    method parse_where_clause(self) -> (WhereClause?, error)
+      source: parser.ly:1089
     method parse_relation(self) -> (RelationDecl?, error)
-      source: parser.ly:1094
+      source: parser.ly:1124
     method parse_relation_side(self, first: Token) -> RelationSide
-      source: parser.ly:1144
+      source: parser.ly:1174
     method parse_type_expr(self) -> (TypeExpr?, error)
-      source: parser.ly:1176
+      source: parser.ly:1207
     method parse_base_type(self) -> (TypeExpr?, error)
-      source: parser.ly:1228
+      source: parser.ly:1259
 
   func new_parser(src_text: string, filename: string) -> Parser
     source: parser.ly:20

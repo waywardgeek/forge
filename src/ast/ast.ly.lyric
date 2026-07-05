@@ -1,6 +1,6 @@
 module ast
   source: ["ast.ly","modules.ly"]
-  why: "Defines all AST node types for the Lyric language. Leaf package — no dependencies on other bootstrap packages. Shared by parser, checker, desugar, and lowerer."
+  why: "Defines all AST node types for the Lyric language. Shared by parser, checker, desugar, and lowerer. Depends on parser (parse_file) for stdlib loading and module resolution."
 
   doc "Architecture":
     """
@@ -40,6 +40,60 @@ module ast
     2. Internal rewriting: references within imported package updated to prefixed names
     3. Qualified access rewriting: caller's math.sin(x) → math_sin(x)
     This is because the bootstrap compiler targets a flat compilation model.
+
+    Relational Ownership: The AST uses Lyric's `relation ArrayList` to define
+    parent-child ownership (e.g. File owns LyricBlocks via the `fb` relation).
+    This ensures memory safety and clear lifecycle management without manual
+    intervention. The relations are defined using the `relation` keyword, which
+    the compiler later desugars into field-binds and destructor logic.
+    """
+
+  doc "Public API":
+    """
+    merge_files: combines multiple parsed files into a single AST by appending
+    their LyricBlocks into one File.
+
+    find_stdlib_dir: locates the standard library directory on the host system.
+
+    load_stdlib: parses all .ly files in the stdlib directory into a single
+    File AST. Calls parse_file from the parser package.
+
+    is_primitive_type: returns true for built-in primitive type names (i32,
+    u64, string, bool, etc.) that bypass normal class lookup.
+
+    merge_stdlib: selectively merges standard library declarations into the
+    user file using a transitive closure algorithm. Only pulls types and
+    functions actually referenced, avoiding binary bloat.
+
+    resolve_module_imports: flattens the module hierarchy into a single
+    namespace by parsing imports, prefixing declarations, and rewriting
+    qualified references. Returns (merged File, error string).
+
+    Dependency Collector Family (ast_collect_*):
+    - ast_collect_type_names / ast_collect_used_type_names: walk TypeExpr
+      trees and declarations to build the set of all referenced type names.
+    - ast_collect_call_names_expr / _stmt / _block: walk expression/statement
+      trees collecting function/method names from call sites.
+    - ast_collect_var_refs_in_expr / _stmt / _block: walk trees collecting
+      variable/identifier references.
+    - ast_collect_used_func_names: scans function bodies and returns the set
+      of all called function/method names; drives the transitive stdlib merge.
+    - ast_func_references_types: returns true if any type in a FuncDecl's
+      signature appears in a given type set; used by merge_stdlib to
+      transitively pull functions that reference needed types.
+
+    Module Rewriting Helpers (modules.ly):
+    - strip_imports: removes ImportDecl nodes after resolution.
+    - prefix_sym / prefix_block_declarations: prefix imported declarations
+      with the import alias (e.g. sin -> math_sin).
+    - rewrite_block_references / rewrite_func_references / rewrite_type_expr /
+      rewrite_block_stmts / rewrite_stmt / rewrite_expr / rewrite_pattern:
+      rewrite internal references within imported code to use prefixed names.
+    - rewrite_qualified_access / rewrite_qualified_in_func /
+      rewrite_qualified_type_expr / rewrite_qualified_block /
+      rewrite_qualified_stmt / rewrite_qualified_expr: rewrite qualified
+      references in calling code (e.g. math.sin(x) -> math_sin(x)).
+    - lookup_name / find_alias_index: name resolution helpers.
     """
 
   invariant "Nullable Variant Fields":
@@ -115,6 +169,15 @@ module ast
     Each pass creates AST consumed by later passes. Order is critical.
     """
 
+  invariant "Annotated AST":
+    procedural
+    """
+    The Expr class includes resolved_type (TypeExpr?) and inferred_type_args
+    ([TypeExpr]) fields. These are null/empty after parsing and populated by
+    the checker during type inference. Downstream phases (lowerer, codegen)
+    read semantic information directly from the tree — no separate symbol
+    table lookup needed at that point.
+    """
 
   struct Pos
     source: ast.ly:15
@@ -163,6 +226,7 @@ module ast
   class FuncDecl
     source: ast.ly:77
     field body: Block?
+      doc: "null in .lyric declaration-only files; non-null in .ly implementation files"
     field is_final: bool
     field is_public: bool
     field is_synthesized: bool
@@ -176,7 +240,7 @@ module ast
     field span: Span
 
   class Field
-    source: ast.ly:93
+    source: ast.ly:112
     field default_value: Expr?
     field guarded_by: Sym?
     field is_public: bool
@@ -185,7 +249,7 @@ module ast
     field type_expr: TypeExpr?
 
   class ClassDecl
-    source: ast.ly:104
+    source: ast.ly:123
     field implements: [Sym]
     field is_permanent: bool
     field is_public: bool
@@ -193,38 +257,41 @@ module ast
     field span: Span
 
   class SubScope
-    source: ast.ly:133
+    source: ast.ly:143
     field hint_iface: Sym?
+      doc: "the hint-shape interface whose per-side members are injected into this sub-scope"
     field label: Sym?
+      doc: "relation-side label identifying which sub-scope on the owning ClassDecl this is; used by the checker to detect name collisions between user-defined methods and relation labels"
     field side_index: i32
+      doc: "0-based index selecting which side of the multi-class interface this sub-scope represents"
     field span: Span
 
   class StructDecl
-    source: ast.ly:116
+    source: ast.ly:151
     field is_public: bool
     field name: Sym?
     field span: Span
 
   class EnumVariant
-    source: ast.ly:124
+    source: ast.ly:159
     field name: Sym?
     field span: Span
 
   class EnumDecl
-    source: ast.ly:130
+    source: ast.ly:165
     field is_public: bool
     field name: Sym?
     field span: Span
 
   class InterfaceFieldDecl
-    source: ast.ly:140
+    source: ast.ly:175
     field name: Sym?
     field span: Span
     field type_expr: TypeExpr?
     field type_param: Sym?
 
   class DestructorBlock
-    source: ast.ly:153
+    source: ast.ly:182
     field body: Block?
     field kind: RelationKind
       doc: "discriminator selecting Owns or Refs — copied onto the concrete class only when matching the relation's kind"
@@ -232,7 +299,7 @@ module ast
     field type_param: Sym?
 
   class InterfaceDecl
-    source: ast.ly:159
+    source: ast.ly:189
     field extends_args: [Sym]
       doc: "Bare type-var names supplied to extends_name's type parameters. Length and order match the parent's itp. TypeExpr args are 🚧 future-work."
     field extends_name: Sym?
@@ -243,10 +310,10 @@ module ast
     field span: Span
 
   typedef ImplMappingKind: enum { Alias, FieldBind, Inline }
-    source: ast.ly:173
+    source: ast.ly:214
 
   class ImplMapping
-    source: ast.ly:175
+    source: ast.ly:216
     field inline_func: FuncDecl?
     field kind: ImplMappingKind
       doc: "discriminator selecting Alias (rename), FieldBind (delegate to embedded field), or Inline (provide a fresh method body)"
@@ -257,34 +324,31 @@ module ast
     field type_param: Sym?
 
   class ImplBlock
-    source: ast.ly:184
+    source: ast.ly:226
     field for_type: Sym?
     field interface_name: Sym?
     field kind: RelationKind?
       doc: "ownership annotation; null = plain impl, non-null = owns/refs-annotated impl over a hint-shape interface; populated by parser for user-authored `impl Hint<A:l1, B:l2> owns { }` and by desugar_relations when synthesizing impls from relation declarations; see cr/docs/multi-class-interface-redesign.md §3.9"
     field span: Span
 
-  // Per-class-type-variable label on an impl declaration's top-level
-  // type argument; selects the sub-scope on the bound class into
-  // which the interface's per-side injected members go. See
-  // cr/docs/multi-class-interface-redesign.md §3.8.
   class ImplTypeArg
-    source: ast.ly:194
-    field type_expr: TypeExpr?
+    source: ast.ly:259
     field label: Sym?
+      doc: "per-class-type-variable label on an impl declaration's top-level type argument; selects the sub-scope on the bound class into which the interface's per-side injected members go; see cr/docs/multi-class-interface-redesign.md §3.8"
     field span: Span
+    field type_expr: TypeExpr?
 
   typedef RelationKind: enum { Owns, Refs }
-    source: ast.ly:196
+    source: ast.ly:267
 
   struct RelationSide
-    source: ast.ly:198
+    source: ast.ly:269
     field label: Sym?
     field type_args: [Sym]
     field type_name: Sym?
 
   class RelationDecl
-    source: ast.ly:204
+    source: ast.ly:275
     field child: RelationSide
     field hint: Sym?
     field is_many: bool
@@ -294,20 +358,20 @@ module ast
     field span: Span
 
   class ImportDecl
-    source: ast.ly:215
+    source: ast.ly:286
     field alias: Sym?
     field path: string
     field span: Span
 
   class TypeAliasDecl
-    source: ast.ly:221
+    source: ast.ly:292
     field is_public: bool
     field name: Sym?
     field span: Span
     field type_expr: TypeExpr?
 
   class ConstDecl
-    source: ast.ly:228
+    source: ast.ly:299
     field is_public: bool
     field name: Sym?
     field span: Span
@@ -315,42 +379,44 @@ module ast
     field value: Expr?
 
   class Comment
-    source: ast.ly:236
+    source: ast.ly:307
     field pos: Pos
     field text: string
 
   typedef UnaryOp: enum { Neg, Not }
-    source: ast.ly:243
+    source: ast.ly:314
 
   typedef BinaryOp: enum { Add, Sub, Mul, Div, Mod, Eq, Neq, Lt, Le, Gt, Ge, And, Or, BitAnd, BitOr, BitXor, Shl, Shr }
-    source: ast.ly:245
+    source: ast.ly:316
 
   struct StructLitField
-    source: ast.ly:252
+    source: ast.ly:323
     field name: Sym?
     field value: Expr?
 
   typedef ExprKind: enum { Ident(name: Sym), IntLit(value: string, type_hint: Sym?), FloatLit(value: string), StringLit(value: string), StringInterp(parts: [Expr]), BoolLit(value: bool), Nil, Call(func_expr: Expr, type_args: [TypeExpr], args: [Expr], mut_args: [bool]), MethodCall(receiver: Expr, method: Sym, type_args: [TypeExpr], args: [Expr], mut_args: [bool]), FieldAccess(receiver: Expr, field_name: Sym), Index(receiver: Expr, index: Expr), Slice(receiver: Expr, low: Expr?, high: Expr?), Unary(op: UnaryOp, operand: Expr), Binary(left: Expr, op: BinaryOp, right: Expr), TupleLit(elems: [Expr]), ListLit(elems: [Expr]), MapLit(keys: [Expr], values: [Expr]), StructLit(type_name: Sym, type_args: [TypeExpr], fields: [StructLitField]), Lambda(params: [Param], return_type: TypeExpr?, body: Block), Match(value: Expr, arms: [MatchArm]), Cast(target_type: TypeExpr, operand: Expr), Unwrap(operand: Expr), Try(operand: Expr), Is(operand: Expr, variant: Sym), IfElse(cond: Expr, then_block: Block, else_ifs: [ElseIf], else_block: Block) }
-    source: ast.ly:257
+    source: ast.ly:328
 
   class Expr
-    source: ast.ly:285
+    source: ast.ly:356
     field inferred_type_args: [TypeExpr]
+      doc: "type arguments inferred by the checker for generic calls; empty after parsing, populated during type inference"
     field kind: ExprKind
       doc: "discriminator selecting which ExprKind variant (Ident, Call, Binary, …) carries this expression's data"
     field resolved_type: TypeExpr?
+      doc: "semantic type assigned by the checker during type inference; null after parsing. Downstream phases (lowerer, codegen) read this directly from the tree."
     field span: Span
 
   typedef PatternKind: enum { Ident(name: Sym), Literal(expr: Expr), Variant(name: Sym, bindings: [Pattern]), Wildcard, Tuple(elems: [Pattern]) }
-    source: ast.ly:294
+    source: ast.ly:365
 
   class Pattern
-    source: ast.ly:302
+    source: ast.ly:373
     field kind: PatternKind
     field span: Span
 
   class MatchArm
-    source: ast.ly:307
+    source: ast.ly:378
     field body: Block?
     field guard: Expr?
     field pattern: Pattern?
@@ -358,21 +424,21 @@ module ast
     field span: Span
 
   typedef StmtKind: enum { VarDecl(name: Sym, names: [Sym], type_expr: TypeExpr?, is_mut: bool, is_ref: bool, value: Expr?), Assign(target: Expr, value: Expr), Return(value: Expr?), ExprStmt(expr: Expr), If(condition: Expr, then_block: Block, else_ifs: [ElseIf], else_block: Block?), For(var_name: Sym, index_var: Sym?, collection: Expr, body: Block), While(condition: Expr, body: Block), Match(value: Expr, arms: [MatchArm]), BlockStmt(block: Block), Break, Continue, Spawn(body: Block), Select(cases: [SelectCase]), Yield(value: Expr?), Lock(mutex: Expr, body: Block), IfLet(pattern: Pattern, value: Expr, then_block: Block, else_block: Block?), LetElse(pattern: Pattern, value: Expr, else_block: Block), Ref(expr: Expr), Unref(expr: Expr) }
-    source: ast.ly:317
+    source: ast.ly:388
 
   class Stmt
-    source: ast.ly:340
+    source: ast.ly:410
     field kind: StmtKind
     field span: Span
 
   class ElseIf
-    source: ast.ly:345
+    source: ast.ly:415
     field body: Block?
     field condition: Expr?
     field span: Span
 
   class SelectCase
-    source: ast.ly:351
+    source: ast.ly:421
     field bind_var: Sym?
     field body: Block?
     field expr: Expr?
@@ -380,63 +446,63 @@ module ast
     field span: Span
 
   class Block
-    source: ast.ly:359
+    source: ast.ly:429
     field span: Span
 
   class LyricBlock
-    source: ast.ly:366
+    source: ast.ly:436
     field name: Sym?
     field span: Span
 
   class File
-    source: ast.ly:381
+    source: ast.ly:451
     field filename: string
     field span: Span
 
   func merge_files(files: [File?]) -> File?
-    source: ast.ly:393
+    source: ast.ly:463
 
   func find_stdlib_dir() -> string
-    source: ast.ly:429
-
-  func load_stdlib(dir: string) -> File?
-    source: ast.ly:440
-
-  func is_primitive_type(name: string) -> bool
-    source: ast.ly:471
-
-  func ast_collect_type_names(te: TypeExpr?, names: Dict<Sym, bool>)
     source: ast.ly:499
 
+  func load_stdlib(dir: string) -> File?
+    source: ast.ly:510
+
+  func is_primitive_type(name: string) -> bool
+    source: ast.ly:541
+
+  func ast_collect_type_names(te: TypeExpr?, names: Dict<Sym, bool>)
+    source: ast.ly:569
+
   func ast_collect_used_type_names(file: File?) -> Dict<Sym, bool>
-    source: ast.ly:539
+    source: ast.ly:609
 
   func ast_collect_call_names_expr(expr: Expr?, names: Dict<Sym, bool>)
-    source: ast.ly:590
+    source: ast.ly:660
 
   func ast_collect_call_names_stmt(stmt: Stmt, names: Dict<Sym, bool>)
-    source: ast.ly:700
+    source: ast.ly:770
 
   func ast_collect_call_names_block(block: Block, names: Dict<Sym, bool>)
-    source: ast.ly:784
+    source: ast.ly:851
 
   func ast_collect_var_refs_in_expr(expr: Expr?, names: Dict<Sym, bool>)
-    source: ast.ly:793
+    source: ast.ly:860
 
   func ast_collect_var_refs_in_stmt(stmt: Stmt, names: Dict<Sym, bool>)
-    source: ast.ly:897
+    source: ast.ly:964
 
   func ast_collect_var_refs_in_block(block: Block, names: Dict<Sym, bool>)
-    source: ast.ly:985
+    source: ast.ly:1049
 
   func ast_collect_used_func_names(file: File?) -> Dict<Sym, bool>
-    source: ast.ly:994
+    source: ast.ly:1058
 
   func ast_func_references_types(fn_: FuncDecl, used_types: Dict<Sym, bool>) -> bool
-    source: ast.ly:1023
+    source: ast.ly:1087
 
   func merge_stdlib(file: File?, std_file: File?)
-    source: ast.ly:1040
+    source: ast.ly:1104
 
   func resolve_module_imports(module_root: string, root_file: File?) -> (File?, string)
     source: modules.ly:10

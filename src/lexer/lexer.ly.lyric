@@ -24,10 +24,15 @@ module lexer
     Braces {} delimit blocks and do NOT participate in bracket_depth.
 
     String forms: scan_string, scan_triple_string, scan_fstring, and
-    scan_char_lit handle the four literal shapes. F-strings encode escaped
-    braces {{ and }} as sentinel bytes \\x01 and \\x02 in the token text
-    so the parser can later distinguish them from interpolation
+    scan_char_lit handle the four literal shapes. Backtick-enclosed
+    identifiers (`name`) are lexed as LBacktickSym by scan_backtick_sym,
+    which the parser desugars into symbol literals. F-strings encode
+    escaped braces {{ and }} as sentinel bytes \\x01 and \\x02 in the
+    token text so the parser can later distinguish them from interpolation
     boundaries; the parser is responsible for decoding the sentinels.
+    Triple-quoted strings (\"\"\"...\"\"\") automatically trim leading and
+    trailing whitespace-only lines. Numeric literals support underscores
+    as digit separators for readability.
 
     Comments are NOT emitted as tokens. The scan loop consumes // and
     /* */ comments and discards them, keeping the token stream clean
@@ -36,6 +41,25 @@ module lexer
     Token splitting (e.g. >> → > >) for nested generics like Dict<Dict<V>>
     is explicitly NOT a lexer responsibility — the lexer emits OShr and
     the parser uses pushBack to split it when a closing > is expected.
+    """
+
+  doc "Technical Debt":
+    """
+    Unicode: the bootstrap lexer is ASCII-only. Full UTF-8 support is
+    required for the production compiler to handle international
+    characters in identifiers and strings.
+
+    Block comments: /* */ support is defined in the formal model but
+    not yet implemented in the source code.
+
+    Error recovery: unknown characters currently fall back to being
+    treated as identifiers. A dedicated SError token would improve
+    robustness of parser error recovery.
+
+    Static keyword table: the keyword Dict is re-initialized per Lexer
+    instance. Moving it to a global constant (once the language supports
+    static initialization of complex types) would eliminate redundant
+    allocation.
     """
 
   invariant "Keyword Lookup":
@@ -78,6 +102,16 @@ module lexer
     does not corrupt newline suppression.
     """
 
+  invariant "Newline Collapsing":
+    procedural
+    """
+    The lexer automatically collapses multiple consecutive newlines
+    into a single SNewline token. After emitting one SNewline, any
+    immediately following newline bytes are consumed without producing
+    additional tokens. This simplifies the parser's job of handling
+    statement boundaries — it never sees runs of empty-line separators.
+    """
+
   invariant "F-String Sentinels":
     procedural
     """
@@ -95,14 +129,14 @@ module lexer
   invariant "Comment Handling":
     procedural
     """
-    Comments are NOT emitted as tokens. The scan loop consumes //
-    line comments and /* */ block comments and discards them.
-    Downstream consumers (parser, formatter) MUST NOT expect comment
-    tokens in the stream.
+    Comments are NOT emitted as tokens. Line comments (//) are scanned
+    and collected into an ArrayList relation on the Lexer instance.
+    Block comments (/* */) are consumed and discarded.
 
-    Tooling that needs comments preserved must extend the lexer to
-    collect them into a side channel; the bootstrap pipeline does
-    not require this.
+    Downstream consumers (parser, formatter) MUST NOT expect comment
+    tokens in the token stream. The collected comments are available
+    via the Lexer's side channel for tools such as documentation
+    generators or code formatters that need to preserve them.
     """
 
   invariant "Token Splitting Boundary":
@@ -117,7 +151,6 @@ module lexer
     mechanism in the parser's expectation logic.
     """
 
-
   typedef TokenKind: enum { KLyric, KFunc, KClass, KStruct, KEnum, KInterface, KRelation, KField, KDestructor, KImport, KImplements, KImpl, KExtends, KAs, KIs, KType, KWhere, KOwns, KRefs, KMut, KSelf, KFrom, KTrue, KFalse, KNil, KPub, KLet, KIf, KElse, KFor, KIn, KWhile, KMatch, KReturn, KBreak, KContinue, KSpawn, KSelect, KCase, KLock, KYield, LIdent, LIntLit, LFloatLit, LStringLit, LTripleString, LFString, LCharLit, LBacktickSym, PLParen, PRParen, PLBrace, PRBrace, PLBracket, PRBracket, PComma, PColon, PDot, PArrow, PFatArrow, PBiArrow, PPipe, PQuestion, PLt, PGt, OAssign, OPlus, OMinus, OStar, OSlash, OPercent, OEqEq, OBangEq, OLtEq, OGtEq, OAmpAmp, OPipePipe, OBang, OAmp, OCaret, OShl, OShr, OPlusEq, OMinusEq, OStarEq, OSlashEq, SNewline, SEOF }
     source: lexer.ly:15
 
@@ -126,91 +159,114 @@ module lexer
     field kind: TokenKind
       doc: "Discriminator selecting which lexical category this token belongs to (keyword, literal, punctuation, operator, separator). Drives all parser dispatch."
     field span: Span
+      doc: "Source location (file, start, end) anchoring this token to the original text. Enables precise error reporting and source mapping through all compiler stages."
     field text: string
+      doc: "Raw source text captured by this token. For string literals this includes escape sequences as-is; for f-strings it contains sentinel bytes (\\x01/\\x02) encoding escaped braces."
 
   func init_keywords() -> Dict<Sym, TokenKind>
     source: lexer.ly:47
 
-  func is_binary_op(kind: TokenKind) -> bool
-    source: lexer.ly:148
-    doc: "Returns true if the given token kind is a binary operator eligible for line continuation. When the last consumed token is a binary operator, scan() suppresses the next newline."
-
   func lookup_keyword(lex: Lexer, text: string) -> TokenKind?
-    source: lexer.ly:94
+    source: lexer.ly:93
 
   struct LexerState
-    source: lexer.ly:107
+    source: lexer.ly:106
     field bracket_depth: i32
+      doc: "Snapshot of open-paren/bracket nesting depth. Restored on backtrack so newline suppression inside () and [] stays consistent."
     field column: i32
+      doc: "One-based column number at the time of the snapshot."
     field last_kind: TokenKind
       doc: "Kind of the last token consumed by next(). Used by scan() to suppress newlines after binary operators for line continuation."
     field line: i32
+      doc: "One-based line number at the time of the snapshot."
     field peeked_token: Token?
+      doc: "Buffered lookahead token, if any. Must be saved and restored so that peek()/next() ordering is preserved across backtracking."
     field pos: i32
+      doc: "Byte offset into the source string at the time of the snapshot."
 
   class Lexer
     source: lexer.ly:115
     field bracket_depth: i32
+      doc: "Counts open ( and [ tokens. While > 0, newlines are suppressed so multi-line argument lists and list literals stay one statement. Braces {} do NOT affect this counter."
     field column: i32
+      doc: "One-based column tracker, advanced by advance() on every byte consumed."
     field filename: Sym?
+      doc: "Interned filename attached to every Pos the lexer produces, threading through to Span and ultimately to error messages."
     field keywords: Dict<Sym, TokenKind>?
       doc: "Keyword table mapping Sym(identifier) → TokenKind for hard keywords. Built once by init_keywords and consulted by scan_ident. Optional because the field is wired up after construction; lookup_keyword must tolerate a missing table."
     field last_kind: TokenKind
       doc: "Kind of the last token consumed by next(). Updated by next() on every consumed token. Consulted by scan() at newline boundaries — if last_kind is a binary operator, the newline is suppressed for line continuation."
     field line: i32
+      doc: "One-based line tracker, incremented whenever a newline byte is consumed."
     field peeked_token: Token?
+      doc: "Buffered lookahead token produced by peek(). next() drains this before calling scan(), ensuring each token is scanned at most once."
     field pos: i32
+      doc: "Current byte offset into src. Monotonically advances; never rewound except by restore_state."
     field src: string
+      doc: "Complete source text being tokenized. The lexer indexes into this via pos; the string is never mutated."
     method save_state(self) -> LexerState
-      source: lexer.ly:127
+      source: lexer.ly:128
+      why: "Captures a value-type snapshot of pos, line, column, bracket_depth, last_kind, and peeked_token. Used by the parser to checkpoint before speculative parses (e.g. disambiguating struct literals from blocks). The snapshot is a simple value copy — cheap and side-effect free."
     method restore_state(self, state: LexerState)
-      source: lexer.ly:137
+      source: lexer.ly:139
+      why: "Reverts the lexer to a previously saved LexerState, ensuring that backtracking is side-effect free. All mutable fields — pos, line, column, bracket_depth, last_kind, peeked_token — are restored atomically."
     method current_pos(self) -> Pos
-      source: lexer.ly:189
+      source: lexer.ly:196
+      why: "Returns the current source position as a Pos value. Used by the parser to anchor error messages and AST nodes to specific source locations."
     method advance(self) -> u8
-      source: lexer.ly:193
+      source: lexer.ly:200
     method peek_char(self) -> u8
-      source: lexer.ly:208
-    method peek_at(self, offset: i32) -> u8
       source: lexer.ly:215
+    method peek_at(self, offset: i32) -> u8
+      source: lexer.ly:222
     method peek(self) -> Token
-      source: lexer.ly:224
+      source: lexer.ly:231
+      why: "Returns the next token without advancing the scanner. Caches the result in peeked_token so repeated peeks are O(1). The parser uses this for lookahead-driven dispatch without consuming the token."
     method next(self) -> Token
-      source: lexer.ly:234
+      source: lexer.ly:241
+      why: "Consumes and returns the next token. Drains peeked_token first, otherwise calls scan(). Updates last_kind on every consumed token so that scan() can apply binary-operator line continuation on the following newline."
     method scan_escape(self, buf: StringBuilder) -> bool
-      source: lexer.ly:246
+      source: lexer.ly:256
     method scan_char_lit(self, start: Pos) -> Token
-      source: lexer.ly:277
+      source: lexer.ly:287
     method scan_backtick_sym(self, start: Pos) -> Token
-      source: lexer.ly:293
+      source: lexer.ly:303
+      why: "Scans backtick-enclosed identifiers (`name`) and emits LBacktickSym. The parser desugars these into symbol literals."
     method scan_string(self, start: Pos) -> Token
-      source: lexer.ly:310
+      source: lexer.ly:320
     method scan_triple_string(self, start: Pos) -> Token
-      source: lexer.ly:336
+      source: lexer.ly:346
+      why: "Scans triple-quoted multi-line raw text blocks (\"\"\"...\"\"\"). Leading and trailing whitespace-only lines are automatically trimmed from the captured text."
     method scan_fstring(self, start: Pos) -> Token
-      source: lexer.ly:353
+      source: lexer.ly:363
+      why: "Scans f-string literals (f\"...\"). Encodes escaped braces {{ and }} as sentinel bytes \\x01 and \\x02 in the token text so the parser can distinguish literal braces from interpolation boundaries {expr}."
     method scan_number(self, start: Pos) -> Token
-      source: lexer.ly:397
+      source: lexer.ly:407
+      why: "Scans integer and floating-point numeric literals. Underscores are allowed as digit separators for readability (e.g. 1_000_000)."
     method scan_ident(self, start: Pos) -> Token
-      source: lexer.ly:427
+      source: lexer.ly:437
+      why: "Scans an identifier and consults the keyword lookup table. Hard keywords emit their specific TokenKind; all other identifiers (including contextual keywords like field, lock, implements) emit LIdent for parser-side resolution."
     method scan(self) -> Token
-      source: lexer.ly:458
+      source: lexer.ly:468
       why: "The main lexing loop: skips whitespace and comments, then dispatches on the next byte to the appropriate scan_* helper, producing exactly one Token per call. Honors bracket_depth to suppress newlines inside () and []. This is the single entry point feeding peek and next."
 
+  func is_binary_op(kind: TokenKind) -> bool
+    source: lexer.ly:148
+
   func new_lexer(src_text: string, filename: Sym) -> Lexer
-    source: lexer.ly:145
+    source: lexer.ly:152
 
   func is_letter(ch: u8) -> bool
-    source: lexer.ly:156
+    source: lexer.ly:163
 
   func is_digit(ch: u8) -> bool
-    source: lexer.ly:160
+    source: lexer.ly:167
 
   func is_ident_char(ch: u8) -> bool
-    source: lexer.ly:164
+    source: lexer.ly:171
 
   func hex_val(ch: u8) -> u8
-    source: lexer.ly:168
+    source: lexer.ly:175
 
   func make_token(kind: TokenKind, text: string, start: Pos, end: Pos) -> Token
-    source: lexer.ly:183
+    source: lexer.ly:190

@@ -58,6 +58,112 @@ module main
       --lir-dump. These are diagnostic-only and never affect codegen.
     """
 
+  doc "Public API":
+    """
+    The main module exposes its functionality through CLI subcommands:
+
+    cmd_compile(args) -> bool:
+      Orchestrates full compilation of one or more .ly files. Supports
+      -o (output path), --lir-dump (diagnostic LIR text), --soa
+      (struct-of-arrays slabs), --detect-uaf (poison checks on freed
+      memory), --rc-free (actually free on rc=0), --mono (monomorphize
+      but skip C emission). Also handles "module mode" when a lyric.mod
+      file is present in the input directory.
+
+    cmd_test(args) -> bool:
+      Runs the compilation pipeline, then scans LIR for functions named
+      with a test_ prefix (with no receiver). Generates a C test runner
+      that uses setjmp/longjmp to isolate each test's failures so one
+      assertion failure does not terminate the entire suite. Compiles
+      the runner with a system C compiler (e.g. GCC), executes tests in
+      a temp directory, and cleans up afterward.
+
+    cmd_fmt(args) -> bool:
+      Pretty-printing service for .lyric design files. Ensures decls
+      are ordered by original source line and comments are preserved in
+      their correct context via line-number metadata.
+
+    resolve_command(prefix) -> (string, bool):
+      Unique-prefix matching over {compile, test, fmt}. Checks for
+      exact match first, then falls back to prefix matching. Ambiguous
+      prefixes are rejected with an error listing all possibilities.
+
+    compile_pipeline(...) -> bool:
+      The heart of the module — orchestrates the strictly ordered,
+      unidirectional transformation from raw source to C11 output.
+      Each phase consumes the validated output of the previous one.
+    """
+
+  doc "Dependencies":
+    """
+    The main module is the primary consumer of the following internal
+    modules, each responsible for a distinct compiler phase:
+
+      parser    — Source ingestion and parsing to AST.
+      ast       — AST merging, module resolution, stdlib loading.
+      desugar   — Language feature expansion (relations, embeddings,
+                  default values).
+      checker   — Semantic validation, type inference, symbol resolution.
+      lowerer   — AST-to-LIR translation.
+      optimizer — Structural transforms and dead-code elimination on LIR.
+      monomorphizer — Generic specialization and implementation renaming.
+      memory    — Memory safety instrumentation (slab rewrite, SoA
+                  layouts, reference counting).
+      c_backend — Final C11 code generation.
+      lir       — Shared intermediate representation data structures.
+
+    External dependency: the runtime module provides lyric_runtime.h,
+    used during cmd_test's C compilation phase.
+    """
+
+  doc "Technical Debt":
+    """
+    - Incremental compilation: currently whole-program only. A module-
+      level caching system would improve velocity on large projects.
+    - Formatter expansion: currently specialized for .lyric files.
+      Extending to full .ly source with comment preservation is a
+      high priority.
+    - Parallel compilation: the pipeline is single-threaded. Parsing
+      and checking independent modules could be parallelized.
+    - Improved error reporting: more contextual info such as "error
+      during monomorphization of X" would aid debugging.
+    """
+
+  invariant "Pipeline Phase Ordering":
+    procedural
+    """
+    The compilation pipeline phases must execute in strict sequential
+    order — each phase consumes the validated output of its predecessor
+    and the ordering is load-bearing for correctness:
+      parse → merge → module-resolve → stdlib-merge → desugar →
+      check → lower → optimize → monomorphize → resolve-class-types →
+      memory-pass → c-backend-emit.
+    Reordering or skipping intermediate phases corrupts the IR and
+    produces incorrect output. The desugar sub-passes also have a
+    fixed internal order: fields → field_access → relations →
+    destructors → defaults.
+    """
+
+  invariant "Unique-Prefix Command Resolution":
+    procedural
+    """
+    resolve_command must: (1) prefer exact matches over prefix matches,
+    (2) reject ambiguous prefixes by reporting all matching commands,
+    (3) return false for zero-match prefixes. This ensures developer-
+    friendly shortcuts (e.g. 'lyric c' → compile) while preventing
+    accidental command execution when new commands create ambiguity.
+    """
+
+  invariant "Test Isolation via setjmp/longjmp":
+    procedural
+    """
+    The generated C test runner wraps each test_* call in a setjmp
+    checkpoint. When a test triggers an assertion failure (via the
+    runtime's error handling), the harness longjmps back to the
+    checkpoint rather than terminating the process. This guarantees
+    that one failing test never prevents subsequent tests from running.
+    """
+
   func resolve_command(prefix: string) -> (string, bool)
     source: main.ly:11
 
@@ -86,70 +192,70 @@ module main
     source: main.ly:584
 
   func cmd_compile(args: [string]) -> bool
-    source: main.ly:696
+    source: main.ly:700
 
   func cmd_test(args: [string]) -> bool
-    source: main.ly:788
+    source: main.ly:795
 
   func find_runtime_dir() -> string
-    source: main.ly:973
+    source: main.ly:986
 
   func cmd_fmt(args: [string]) -> bool
-    source: main.ly:989
+    source: main.ly:1002
 
   func fmt_file(path: string) -> bool
-    source: main.ly:1005
+    source: main.ly:1018
 
   func split_at_marker(text: string, marker: string) -> (string, string)
-    source: main.ly:1063
+    source: main.ly:1076
 
   func emit_comments_before(sb: StringBuilder, comments: [Comment], idx: i32, before_line: i32, indent: string) -> i32
-    source: main.ly:1071
+    source: main.ly:1084
 
   func fmt_block(sb: StringBuilder, block: LyricBlock, comments: [Comment], comment_idx: i32)
-    source: main.ly:1093
+    source: main.ly:1106
 
   struct DeclItem
-    source: main.ly:1178
+    source: main.ly:1191
     field idx: i32
     field line: i32
     field tag: i32
 
   func sort_decl_items(items: [DeclItem])
-    source: main.ly:1185
+    source: main.ly:1198
 
   func fmt_import(sb: StringBuilder, imp: ImportDecl)
-    source: main.ly:1203
+    source: main.ly:1216
 
   func fmt_struct(sb: StringBuilder, s: StructDecl)
-    source: main.ly:1211
+    source: main.ly:1224
 
   func fmt_enum(sb: StringBuilder, e: EnumDecl)
-    source: main.ly:1227
+    source: main.ly:1240
 
   func fmt_interface(sb: StringBuilder, iface: InterfaceDecl)
-    source: main.ly:1284
+    source: main.ly:1297
 
   func fmt_class(sb: StringBuilder, c: ClassDecl)
-    source: main.ly:1334
+    source: main.ly:1347
 
   func fmt_func(sb: StringBuilder, fn: FuncDecl, indent: string)
-    source: main.ly:1365
+    source: main.ly:1378
 
   func fmt_relation(sb: StringBuilder, r: RelationDecl)
-    source: main.ly:1406
+    source: main.ly:1419
 
   func fmt_type_alias(sb: StringBuilder, t: TypeAliasDecl)
-    source: main.ly:1430
+    source: main.ly:1443
 
   func fmt_field(sb: StringBuilder, f: Field)
-    source: main.ly:1441
+    source: main.ly:1454
 
   func fmt_type_params(sb: StringBuilder, tps: [TypeParam])
-    source: main.ly:1451
+    source: main.ly:1464
 
   func fmt_type_expr(sb: StringBuilder, te: TypeExpr?)
-    source: main.ly:1467
+    source: main.ly:1480
 
   func main()
-    source: main.ly:1552
+    source: main.ly:1565
