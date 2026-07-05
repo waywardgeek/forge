@@ -1733,6 +1733,44 @@ lyric checker {
         }
       }
     }
+
+    // Phase 1.5c: Register desugared default methods on family member TypeInfos.
+    // desugar_default_impls extracts default methods from interfaces and moves them
+    // to top-level block functions with where clauses. Find them and add to the
+    // per-family-member TypeInfos so method resolution works on interface types.
+    for blk in all_blocks {
+      let funcs = blk.fd.children()
+      for f in funcs {
+        if f.name == null { continue }
+        if f.receiver_type == null { continue }
+        let rname = sym_to_string(f.receiver_type!)
+        let where_clauses = f.wc.children()
+        for wc in where_clauses {
+          if wc.constraint == null { continue }
+          let iface_name = sym_to_string(wc.constraint!)
+          let iface_info = self.registry.lookup(iface_name)
+          if iface_info == null { continue }
+          let fps = iface_info!.family_params
+          if len(fps) == 0 { continue }
+          let mut is_family_member = false
+          for fp in fps {
+            if rname == fp { is_family_member = true }
+          }
+          if !is_family_member { continue }
+          let qualified = iface_name + "." + rname
+          let fp_info = self.registry.lookup(qualified)
+          if fp_info == null { continue }
+          let mn = sym_to_string(f.name!)
+          let family_subst = Dict<Sym, Type>()
+          for fp in fps {
+            family_subst.set(sym(fp), make_interface_type(iface_name + "." + fp))
+          }
+          let ft = self.func_decl_to_type(f)
+          let subst_ft = substitute_type(ft, family_subst)
+          fp_info!.methods.set(sym(mn), subst_ft)
+        }
+      }
+    }
   }
 
   func Checker.register_interface(self, iface: InterfaceDecl) {
@@ -4231,6 +4269,36 @@ lyric checker {
     // When no concrete method is found, check if the receiver class satisfies
     // any multi-param interface that has this method as a default.
     // Resolution: concrete class method → interface default method → free function.
+    let ufcs_class_name = type_name(recv_type)
+    if ufcs_class_name != "" {
+      let iface_entries = self.iface_decls.keys()
+      for ie in iface_entries {
+        let iface = self.iface_decls.get(ie)
+        if iface == null { continue }
+        let iface_info = self.registry.lookup(ie.name)
+        if iface_info == null { continue }
+        let fps = iface_info!.family_params
+        for fp in fps {
+          let qualified = ie.name + "." + fp
+          let fp_info = self.registry.lookup(qualified)
+          if fp_info == null { continue }
+          let mt = fp_info!.methods.get(sym(method_str))
+          if mt == null { continue }
+          // Found! Check structural satisfaction to confirm the class qualifies
+          if self.check_structural_satisfaction(ufcs_class_name, qualified) {
+            match mt!.value.kind {
+              Func(params, ret, _) => { return ret }
+              _ => { return mt!.value }
+            }
+          }
+        }
+      }
+    }
+
+    // Interface default method resolution (design §11.1):
+    // When no concrete method is found, check if the receiver class satisfies
+    // any multi-param interface that has this method as a default.
+    // Resolution: concrete class method → interface default method → free function.
     let class_name = type_name(recv_type)
     if class_name != "" {
       let iface_entries = self.iface_decls.keys()
@@ -5721,15 +5789,17 @@ lyric checker {
       }
     }
 
-    // Verify all family params are bound
-    for fp in family_params {
-      if !bindings.has(sym(fp)) { return false }
+    // Verify all family params are bound (unless checking a specific member for UFCS)
+    if expected_member == "" {
+      for fp in family_params {
+        if !bindings.has(sym(fp)) { return false }
+      }
     }
 
     // Verify all bound classes have the required methods
     for fp in family_params {
       let binding = bindings.get(sym(fp))
-      if isnull(binding) { return false }
+      if isnull(binding) { continue }  // unbound params OK when checking specific member
       let cls = binding!.value
       let cls_info = self.registry.lookup(cls)
       if cls_info == null { return false }
