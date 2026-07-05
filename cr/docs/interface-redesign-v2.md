@@ -549,6 +549,20 @@ to a direct offset load when monomorphized.
   may call the target directly and/or monomorphize a specialized copy
   of a default method / free function. Semantics identical; Go
   intuition ("dynamic by default, devirtualize when known") holds.
+  **Mandate (Bill, 2026-07-05): this is a requirement, not a maybe.**
+  Erasure is the semantic model, not an ABI. A default method body is
+  structurally a generic function over the family params; specializing
+  it reuses the ordinary generic-monomorphization machinery. When an
+  interface has exactly one satisfying tuple in the whole program, the
+  compiler MUST specialize everything and emit no vtable at all;
+  in general the erased/vtable emission is the fallback for genuinely
+  dynamic sites (heterogeneous collections, type switches over unknown
+  values) and may never be emitted for many programs. Sequencing:
+  correctness-first over fat pointers (the erased output is the
+  differential-testing oracle), specialization as its own phase after.
+  Binary-level polymorphism (.so/.dll vtable ABI export) is explicitly
+  deferred until Lyric defines shared-library compilation; nothing in
+  this design requires vtable emission for export.
 - June 2026 vtable groundwork (boxed values, static per-(class,
   interface) vtables, `error` dispatch) is the starting point; the
   piece skipped then — generic interfaces — is handled by the
