@@ -341,6 +341,16 @@ lyric lowerer {
       }
     }
 
+    // Check for qualified interface name (e.g. "DirectedGraph.N")
+    let dot_pos = str_index_of(n, ".")
+    if dot_pos >= 0 {
+      let base = n[0:dot_pos]
+      let member = n[dot_pos + 1:]
+      if self.interfaces!.has(sym(base)) {
+        return LType { kind: TyInterfaceRef, name: base, member_name: member, bits: 0, is_exported: false }
+      }
+    }
+
     // Must be a type variable
     return LType { kind: TyTypeVar, name: n, bits: 0, is_exported: false }
   }

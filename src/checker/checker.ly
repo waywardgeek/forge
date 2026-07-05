@@ -1182,11 +1182,14 @@ lyric checker {
       QualifiedType(base, member) => {
         // X.Y in type position. Check if X is a known interface.
         let base_name = sym_to_string(base)
+        let member_name = sym_to_string(member)
         let iface_entry = self.iface_decls.get(base)
         if iface_entry != null {
           // Interface family member type — resolve to Interface type.
-          // For single-param interfaces, bare Iface.T and Iface are equivalent.
-          return Type { kind: TypeKind.Interface(base_name), bits: 0, type_args: [] }
+          // Store as "Interface.Member" to preserve family member identity
+          // for method resolution (e.g., "DirectedGraph.N" has outgoing_edges).
+          let qualified = base_name + "." + member_name
+          return Type { kind: TypeKind.Interface(qualified), bits: 0, type_args: [] }
         }
         // Not an interface — try as dotted name (module.Type or enum.Variant)
         let dotted = base_name + "." + sym_to_string(member)
@@ -1812,6 +1815,54 @@ lyric checker {
         let tpname = sym_to_string(tp.name!)
         if receiver_params.has(tp.name!) {
           append(info.family_params, tpname)
+        }
+      }
+    }
+
+    // Register per-family-member TypeInfos (e.g. "DirectedGraph.G", "DirectedGraph.N").
+    // Each contains only the methods declared on that family member, so method
+    // resolution on Interface("DirectedGraph.N") finds outgoing_edges etc.
+    if len(info.family_params) > 0 {
+      // Build substitution: each type param -> Interface("Iface.Param")
+      // so method types use concrete interface types, not raw type vars.
+      // E.g., G -> Interface("DirectedGraph.G"), N -> Interface("DirectedGraph.N")
+      let family_subst = Dict<Sym, Type>()
+      for fp2 in info.family_params {
+        family_subst.set(sym(fp2), make_interface_type(iname + "." + fp2))
+      }
+      for fp in info.family_params {
+        let qualified = iname + "." + fp
+        let mut fp_info_opt = self.registry.lookup(qualified)
+        if fp_info_opt == null {
+          let fp_info = TypeInfo {
+            type_val: make_interface_type(qualified),
+            fields: Dict<Sym, Type>(),
+            field_order: [],
+            methods: Dict<Sym, Type>(),
+            variants: Dict<Sym, VariantInfo>(),
+            type_param_names: [],
+            type_param_constraints: [],
+            implements_list: [],
+            sub_scope_labels: Dict<Sym, bool>(),
+            family_params: [],
+          }
+          self.registry.register(qualified, fp_info)
+          fp_info_opt = self.registry.lookup(qualified)
+        }
+        let fp_info = fp_info_opt!
+        // Copy only methods whose receiver matches this family param
+        for m in imethods {
+          if m.name != null && m.receiver_type != null {
+            let recv_name = sym_to_string(m.receiver_type!)
+            if recv_name == fp {
+              let mn = sym_to_string(m.name!)
+              let ft = self.func_decl_to_type(m)
+              // Substitute type vars with interface types:
+              // e.g., gen N -> gen Interface("DirectedGraph.N")
+              let subst_ft = substitute_type(ft, family_subst)
+              fp_info.methods.set(sym(mn), subst_ft)
+            }
+          }
         }
       }
     }
@@ -5504,12 +5555,23 @@ lyric checker {
   // that an interface requires? Used by is_assignable for lazy satisfaction.
   // Returns true if the class structurally satisfies the interface.
   func Checker.check_structural_satisfaction(self, class_name: string, iface_name: string) -> bool {
-    let iface_entry = self.iface_decls.get(sym(iface_name))
+    // Handle qualified interface names ("DirectedGraph.N" -> "DirectedGraph")
+    let mut base_iface_name = iface_name
+    let mut member_name = ""
+    let dot_pos = str_index_of(iface_name, ".")
+    if dot_pos >= 0 {
+      base_iface_name = iface_name[0:dot_pos]
+      member_name = iface_name[dot_pos + 1:]
+    }
+    let iface_entry = self.iface_decls.get(sym(base_iface_name))
     if isnull(iface_entry) { return false }
     let iface = iface_entry!.value
-    // Only support single-param interfaces for now (Phase 1)
     let itp = iface.itp.children()
-    if len(itp) > 1 { return false }
+    if len(itp) > 1 {
+      // Multi-param: signature chase (design §3)
+      return self.check_structural_chase(class_name, iface, member_name)
+    }
+    // Single-param: simple method name check
     // Get class methods from registry
     let info = self.registry.lookup(class_name)
     if info == null { return false }
@@ -5529,6 +5591,209 @@ lyric checker {
     return true
   }
 
+  // check_structural_chase: multi-param signature chase (design §3).
+  // Given an anchor class, chase method signatures to discover the full
+  // class-tuple binding for a multi-param interface.
+  func Checker.check_structural_chase(self, anchor_class: string, iface: InterfaceDecl, expected_member: string) -> bool {
+    let itp = iface.itp.children()
+    let imethods = iface.im.children()
+
+    // Get the interface's family params from TypeInfo
+    let iname = if !isnull(iface.name) { sym_to_string(iface.name!) } else { "" }
+    let iface_info = self.registry.lookup(iname)
+    if iface_info == null { return false }
+    let family_params = iface_info!.family_params
+
+    // Build bindings dict: type_param_name → concrete_class_name
+    let bindings = Dict<Sym, string>()
+
+    // Find which family param the anchor class maps to by checking which
+    // param's methods the anchor class has.
+    let anchor_info = self.registry.lookup(anchor_class)
+    if anchor_info == null { return false }
+
+    let mut anchor_param = ""
+    for fp in family_params {
+      // Check if anchor class has all abstract methods for this family param
+      let mut has_all = true
+      let mut has_any = false
+      for mi in range(0, len(imethods)) {
+        let m = imethods[mi]
+        if !isnull(m.body) { continue }
+        if m.name == null { continue }
+        if m.is_synthesized { continue }
+        if m.receiver_type == null { continue }
+        let recv_name = sym_to_string(m.receiver_type!)
+        if recv_name != fp { continue }
+        has_any = true
+        let mname = sym_to_string(m.name!)
+        if !anchor_info!.methods.has(sym(mname)) {
+          has_all = false
+        }
+      }
+      if has_any && has_all && anchor_param == "" {
+        anchor_param = fp
+      }
+    }
+    if anchor_param == "" { return false }
+
+    // If caller specified a member (e.g., "G" from "DirectedGraph.G"),
+    // verify the anchor maps to that specific family param.
+    if expected_member != "" && anchor_param != expected_member {
+      return false
+    }
+
+    // Bind the anchor
+    bindings.set(sym(anchor_param), anchor_class)
+
+    // Chase: iteratively discover bindings from method return types.
+    // Each method `func G.nodes(self) -> gen N` tells us N = return type's class.
+    // We iterate until no new bindings are discovered.
+    let mut changed = true
+    let mut iterations = 0
+    while changed && iterations < 10 {
+      changed = false
+      iterations = iterations + 1
+      for mi in range(0, len(imethods)) {
+        let m = imethods[mi]
+        if !isnull(m.body) { continue }
+        if m.name == null { continue }
+        if m.is_synthesized { continue }
+        if m.receiver_type == null { continue }
+        let recv_name = sym_to_string(m.receiver_type!)
+        // Only process methods where the receiver is already bound
+        let recv_binding = bindings.get(sym(recv_name))
+        if isnull(recv_binding) { continue }
+        let concrete_class = recv_binding!.value
+        // Look up the concrete class's method return type
+        let concrete_info = self.registry.lookup(concrete_class)
+        if concrete_info == null { continue }
+        let mname = sym_to_string(m.name!)
+        let method_type_entry = concrete_info!.methods.get(sym(mname))
+        if method_type_entry == null { continue }
+        let method_type = method_type_entry!.value
+        // Extract the return type name — may be wrapped in gen, [], optional
+        let ret_name = self.extract_return_class_name(method_type)
+        if ret_name == "" { continue }
+        // Check if the interface method's return type references a type param
+        if m.return_type == null { continue }
+        let iface_ret_param = self.extract_type_param_from_return(m.return_type!, itp)
+        if iface_ret_param == "" { continue }
+        // Bind the type param if not already bound
+        let existing = bindings.get(sym(iface_ret_param))
+        if isnull(existing) {
+          bindings.set(sym(iface_ret_param), ret_name)
+          changed = true
+        } else if existing!.value != ret_name {
+          // Inconsistent binding — satisfaction fails
+          return false
+        }
+      }
+    }
+
+    // Verify all family params are bound
+    for fp in family_params {
+      if !bindings.has(sym(fp)) { return false }
+    }
+
+    // Verify all bound classes have the required methods
+    for fp in family_params {
+      let binding = bindings.get(sym(fp))
+      if isnull(binding) { return false }
+      let cls = binding!.value
+      let cls_info = self.registry.lookup(cls)
+      if cls_info == null { return false }
+      for mi in range(0, len(imethods)) {
+        let m = imethods[mi]
+        if !isnull(m.body) { continue }
+        if m.name == null { continue }
+        if m.is_synthesized { continue }
+        if m.receiver_type == null { continue }
+        let recv_name = sym_to_string(m.receiver_type!)
+        if recv_name != fp { continue }
+        let mname = sym_to_string(m.name!)
+        if !cls_info!.methods.has(sym(mname)) {
+          return false
+        }
+      }
+    }
+
+    return true
+  }
+
+  // extract_return_class_name: extract a class name from a method's return type.
+  // Handles direct class, gen Class, [Class], Class?.
+  func Checker.extract_return_class_name(self, method_type: Type) -> string {
+    // method_type is the full function type — extract the return type
+    match method_type.kind {
+      Func(params, ret, _) => {
+        if ret == null { return "" }
+        return self.extract_class_from_type(ret!)
+      }
+      _ => { return "" }
+    }
+  }
+
+  // extract_class_from_type: unwrap gen/slice/optional to find a class name.
+  func Checker.extract_class_from_type(self, t: Type) -> string {
+    match t.kind {
+      Class(name) => { return name }
+      Struct(name) => { return name }
+      Generator(elem) => {
+        if elem != null { return self.extract_class_from_type(elem!) }
+        return ""
+      }
+      Sequence(elem) => {
+        if elem != null { return self.extract_class_from_type(elem!) }
+        return ""
+      }
+      Optional(inner) => {
+        if inner != null { return self.extract_class_from_type(inner!) }
+        return ""
+      }
+      _ => { return "" }
+    }
+  }
+
+  // extract_type_param_from_return: given an interface method's return TypeExpr,
+  // find which type param it references (unwrapping gen/[]/? wrappers).
+  func Checker.extract_type_param_from_return(self, te: TypeExpr, itp: [TypeParam]) -> string {
+    match te.kind {
+      Named(name, args) => {
+        let n = name.name
+        // Check if it's a type param
+        for tp in itp {
+          if !isnull(tp.name) && tp.name!.name == n {
+            return n
+          }
+        }
+        // Check gen (generator of type param) — for "gen N"
+        if n == "gen" && len(args) > 0 {
+          return self.extract_type_param_from_return(args[0], itp)
+        }
+        return ""
+      }
+      Sequence(elem) => {
+        if elem != null {
+          return self.extract_type_param_from_return(elem!, itp)
+        }
+        return ""
+      }
+      Generator(elem) => {
+        if elem != null {
+          return self.extract_type_param_from_return(elem!, itp)
+        }
+        return ""
+      }
+      Optional(inner) => {
+        if inner != null {
+          return self.extract_type_param_from_return(inner!, itp)
+        }
+        return ""
+      }
+      _ => { return "" }
+    }
+  }
   func Checker.validate_impl_satisfies_abstract(self, file: File) {
     // Pre-build a class-name -> ClassDecl map across all blocks so we
     // can consult the original AST for a concrete class's own methods.

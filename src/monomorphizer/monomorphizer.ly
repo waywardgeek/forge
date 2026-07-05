@@ -1514,6 +1514,7 @@ func subst_type(t: LType?, subst: Dict<Sym, LType?>?) -> LType? {
     type_args: new_type_args,
     bits: t!.bits,
     is_exported: t!.is_exported,
+    member_name: t!.member_name,
   }
 }
 
@@ -1542,6 +1543,7 @@ func MonoPass.subst_type_remove_vars(self, t: LType?) -> LType? {
           type_args: [],
           bits: t!.bits,
           is_exported: t!.is_exported,
+          member_name: t!.member_name,
         }
       }
     }
@@ -1575,6 +1577,7 @@ func MonoPass.subst_type_remove_vars(self, t: LType?) -> LType? {
     type_args: new_type_args,
     bits: t!.bits,
     is_exported: t!.is_exported,
+    member_name: t!.member_name,
   }
 }
 
