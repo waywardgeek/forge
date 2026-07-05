@@ -386,6 +386,24 @@ func CGen.is_iface_type(self, t: LType?) -> bool {
   return false
 }
 
+// find_yield_family_member: for a generator-returning interface method,
+// determines which family member the generator yields.
+func CGen.find_yield_family_member(self, iface: LInterfaceDecl, m: LInterfaceMethod) -> string {
+  if isnull(m.return_type) { return "" }
+  let elem = m.return_type!.elem
+  if isnull(elem) { return "" }
+  if elem!.kind is TyTypeVar {
+    let mut fi = 0
+    while fi < len(iface.family_params) {
+      if iface.family_params[fi] == elem!.name {
+        return elem!.name
+      }
+      fi = fi + 1
+    }
+  }
+  return ""
+}
+
 // iface_type_name: returns the C type name for an interface LType.
 // For multi-param interfaces with member_name, returns "Iface_Member" (e.g. "DirectedGraph_G").
 // For single-param, returns the bare interface name (e.g. "Printable").
@@ -5682,6 +5700,16 @@ pub func emit_c(prog: LProgram?) -> string {
               k = k + 1
             }
             g.line(f"{ret_type} (*{m.name})({sb.to_string()});")
+            // Generator methods need _next and _value vtable slots
+            if !isnull(m.return_type) && m.return_type!.kind is TyGenerator {
+              g.line(f"bool (*{m.name}_next)(void*);")
+              let yield_fp = g.find_yield_family_member(ifaces[i], m)
+              if yield_fp != "" {
+                g.line(f"{if_name}_{yield_fp} (*{m.name}_value)(void*);")
+              } else {
+                g.line(f"void* (*{m.name}_value)(void*);")
+              }
+            }
           }
           j = j + 1
         }
@@ -5729,6 +5757,7 @@ pub func emit_c(prog: LProgram?) -> string {
   }
   // Track which (class, impl_key) pairs we've emitted to avoid duplicates
   let emitted_impls = Dict<Sym, bool>()
+  let satisfaction_map = Dict<Sym, string>()
   i = 0
   while i < len(ifaces) {
     let ifd = ifaces[i]
@@ -5773,6 +5802,7 @@ pub func emit_c(prog: LProgram?) -> string {
               }
               if all_found {
                 emitted_impls.set(sym(dedup_key), true)
+                satisfaction_map.set(sym(ifd.name + "_" + fp), cname)
                 g.line(f"static const {ifd.name}_{fp}_vtable {cname}_as_{ifd.name}_{fp};")
               }
             }
@@ -5947,6 +5977,30 @@ pub func emit_c(prog: LProgram?) -> string {
               ri2 = ri2 + 1
             }
             if all_found2 {
+              // Emit _value wrapper functions for generator methods
+              let mut kw = 0
+              while kw < len(ifd2.methods) {
+                let mw = ifd2.methods[kw]
+                if mw.receiver_type == fp2 && !isnull(mw.return_type) && mw.return_type!.kind is TyGenerator {
+                  let yield_fpw = g.find_yield_family_member(ifd2, mw)
+                  if yield_fpw != "" {
+                    let yc_entry = satisfaction_map.get(sym(ifd2.name + "_" + yield_fpw))
+                    if !isnull(yc_entry) {
+                      let yclass = yc_entry!.value
+                      let wname = f"{cname2}_{mw.name}_value_{ifd2.name}_{yield_fpw}"
+                      let fpt = f"{ifd2.name}_{yield_fpw}"
+                      let gtype = f"{cname2}_{mw.name}_gen_t"
+                      g.line(f"static {fpt} {wname}(void* gen) {{")
+                      g.indent = g.indent + 1
+                      g.line(f"{yclass} val = (({gtype}*)gen)->_value;")
+                      g.line(f"return ({fpt}){{ ._data = (void*)(uintptr_t)val, ._vtable = &{yclass}_as_{fpt} }};")
+                      g.indent = g.indent - 1
+                      g.line("}")
+                    }
+                  }
+                }
+                kw = kw + 1
+              }
               // Emit vtable definition
               g.line(f"static const {ifd2.name}_{fp2}_vtable {cname2}_as_{ifd2.name}_{fp2} = {{")
               g.indent = g.indent + 1
@@ -5968,6 +6022,14 @@ pub func emit_c(prog: LProgram?) -> string {
                   // Generator-returning methods use _init suffix
                   let fn_suffix = if !isnull(m2.return_type) && m2.return_type!.kind is TyGenerator { "_init" } else { "" }
                   g.line(f".{m2.name} = ({cast_type2}){cname2}_{m2.name}{fn_suffix},")
+                  // Wire _next and _value for generator methods
+                  if !isnull(m2.return_type) && m2.return_type!.kind is TyGenerator {
+                    g.line(f".{m2.name}_next = (bool(*)(void*)){cname2}_{m2.name}_next,")
+                    let yield_fp2 = g.find_yield_family_member(ifd2, m2)
+                    if yield_fp2 != "" {
+                      g.line(f".{m2.name}_value = ({ifd2.name}_{yield_fp2}(*)(void*)){cname2}_{m2.name}_value_{ifd2.name}_{yield_fp2},")
+                    }
+                  }
                 }
                 k2 = k2 + 1
               }
