@@ -279,7 +279,11 @@ lyric lowerer {
       }
       InterfaceType(iface_name, member_name, brand) => {
         let n = iface_name.name
-        return LType { kind: TyInterfaceRef, name: n, bits: 0, is_exported: false }
+        let mut mn = ""
+        if !isnull(member_name) { mn = member_name!.name }
+        let mut br = ""
+        if !isnull(brand) { br = brand!.name }
+        return LType { kind: TyInterfaceRef, name: n, member_name: mn, brand: br, bits: 0, is_exported: false }
       }
     }
   }

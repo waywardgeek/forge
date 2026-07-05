@@ -4295,35 +4295,7 @@ lyric checker {
       }
     }
 
-    // Interface default method resolution (design §11.1):
-    // When no concrete method is found, check if the receiver class satisfies
-    // any multi-param interface that has this method as a default.
-    // Resolution: concrete class method → interface default method → free function.
-    let class_name = type_name(recv_type)
-    if class_name != "" {
-      let iface_entries = self.iface_decls.keys()
-      for ie in iface_entries {
-        let iface = self.iface_decls.get(ie)
-        if iface == null { continue }
-        let iface_info = self.registry.lookup(ie.name)
-        if iface_info == null { continue }
-        let fps = iface_info!.family_params
-        for fp in fps {
-          let qualified = ie.name + "." + fp
-          let fp_info = self.registry.lookup(qualified)
-          if fp_info == null { continue }
-          let mt = fp_info!.methods.get(sym(method_str))
-          if mt == null { continue }
-          // Found! Check structural satisfaction to confirm the class qualifies
-          if self.check_structural_satisfaction(class_name, qualified) {
-            match mt!.value.kind {
-              Func(params, ret, _) => { return ret }
-              _ => { return mt!.value }
-            }
-          }
-        }
-      }
-    }
+
 
     // Free function UFCS (design §11.1, step 3):
     // Look up method_str as a free function in scope. If its first param is

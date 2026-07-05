@@ -1515,8 +1515,12 @@ func subst_type(t: LType?, subst: Dict<Sym, LType?>?) -> LType? {
     bits: t!.bits,
     is_exported: t!.is_exported,
     member_name: t!.member_name,
+    brand: t!.brand,
   }
 }
+
+
+
 
 func MonoPass.subst_type_remove_vars(self, t: LType?) -> LType? {
   if isnull(t) {
@@ -1544,7 +1548,9 @@ func MonoPass.subst_type_remove_vars(self, t: LType?) -> LType? {
           bits: t!.bits,
           is_exported: t!.is_exported,
           member_name: t!.member_name,
+          brand: t!.brand,
         }
+
       }
     }
   }
@@ -1578,8 +1584,12 @@ func MonoPass.subst_type_remove_vars(self, t: LType?) -> LType? {
     bits: t!.bits,
     is_exported: t!.is_exported,
     member_name: t!.member_name,
+    brand: t!.brand,
   }
 }
+
+
+
 
 // ---------------------------------------------------------------------------
 // Helpers: cloning statements with type substitution
