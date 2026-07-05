@@ -300,9 +300,9 @@ same HEAD; docs true.
   recorded on AST/registry structures by the checker/desugar — never
   re-derived from names downstream.
 - **Ask Bill** at these specific checkpoints: before Phase 5 starts
-  (Dict risk), before deleting `extends` (Phase 6), and before
-  implementing design §13.6 (label collisions — his intent is not
-  yet confirmed). Also whenever a design ambiguity survives contact
+  (Dict risk) and before deleting `extends` (Phase 6). (Design §13.6
+  label collisions is now SETTLED — two-tier namespace, 2026-07-05;
+  see the design doc.) Also whenever a design ambiguity survives contact
   with real code: the design doc §13 records your resolution.
 - **Progress notes**: append a dated note to this file at each phase
   end — what shipped, what was deleted, surprises, deviations from

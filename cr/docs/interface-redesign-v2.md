@@ -1066,19 +1066,36 @@ when you do.
    unsupported) unless the diagnostics prove insufficient in
    practice. NOTE: not yet re-confirmed with Bill; the checker rules
    are cheap and reversible, the syntax addition is neither.
-6. **Relation-label vs identifier collision policy** (carried over;
-   Bill to restate intent).
-   **Leaning: a relation label collides with ANY user-defined member
-   of the same name on that class — field, method, or impl-bound
-   alias — and is a hard error at the relation declaration.** One
-   flat rule, no carve-outs, matching the hard-keyword philosophy.
-   The graph.ly Part 3 pattern (label `outgoing_edges` + alias
-   binding `N.outgoing_edges`) would therefore be an error; under
-   this design it's also unnecessary (§7.3 binds
-   `N.outgoing_edges = Route.out_e.iter` with distinct label names).
-   ⚠ Bill reverted a prior write-up of this policy saying he'd
-   miscommunicated his intent — **confirm with him before
-   implementing this one.**
+6. **Relation-label vs identifier collision policy** — **SETTLED
+   (Bill, 2026-07-05): a two-tier namespace.**
+   - **Tier 1 — user-written declarations** on a class (fields,
+     methods, relation labels the user typed) share one flat
+     namespace; a duplicate among these is a hard error at the later
+     declaration site. (The checker's existing label-vs-field/method
+     collision errors are correct and stay.)
+   - **Tier 2 — interface/impl-supplied names** never enter the
+     class's namespace at all. An alias binding **erases** the
+     interface identifier from being copied to the destination
+     class entirely: the vtable slot is filled from the RHS, and no
+     member named after the interface slot is ever materialized on
+     the class. Likewise, erased-interface defaults live only in the
+     vtable. There is no second name in existence — so there is no
+     collision to detect and no shadowing/resolution special case to
+     carry. (§8's class-method → default → free-function order
+     governs *call-site dispatch*, not namespace membership.)
+   **Rationale (Bill)**: a library's default surface may grow to
+   1,000+ names over time; adding a default method must never break
+   existing user code. This is Go's embedding rule and C#'s
+   extension-method rule.
+   Under v2 this is nearly free: the interface surface never injects
+   names into the class at all — `N.outgoing_edges` is a vtable
+   slot. The graph.ly Part 3 "collision" (label `outgoing_edges` +
+   interface slot `outgoing_edges`) dissolves: the label scope is the
+   only occupant of that name on the class; the interface slot exists
+   solely in the vtable and serves boxed `Graph.N` dispatch.
+   Consequence: a user method whose name+signature matches an
+   interface default fills the vtable slot in the structural chase —
+   i.e. it overrides the default, and the user's code wins.
 7. **Negative assertion** (`!implements`)?
    **Leaning: no.** Add only if accidental structural satisfaction
    produces a real bug in real code. Track occurrences; revisit with
