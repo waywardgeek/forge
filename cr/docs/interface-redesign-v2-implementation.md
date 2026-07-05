@@ -53,6 +53,30 @@
 - **When stuck or surprised**: STOP and ask Bill. Do not hack the
   compiler to accept a bad test, and do not weaken a test to match
   the compiler. Both have happened; both were expensive.
+- **The vtable/fat-pointer path is MANDATORY, not an optimization
+  detail** (Bill, 2026-07-05). Even though the §9 specialization
+  mandate means most (currently all) call sites monomorphize to
+  direct calls, the erased emission must be built for real in
+  Phases 1–2. Two reasons: (a) it is the differential-testing oracle
+  for the specializer; (b) it keeps the family model load-bearing —
+  if fat pointers exist end-to-end, `Graph.G` must be a real type,
+  the chase must produce real vtable layouts, and brands must be
+  real type kinds, so a low-context session CANNOT substitute
+  "generic top-level functions + hope the monomorphizer copes."
+  That substitution is the v1 relapse; do not take it even as a
+  temporary scaffold.
+- **Anti-laziness fence — negative probes are acceptance criteria.**
+  Generic functions cannot express families: if `Graph.N` is modeled
+  as an ordinary type var, brands unify and these probes compile
+  when they MUST NOT. At each phase end, verify the applicable
+  probes still FAIL to compile with the correct diagnostic:
+  (1) brand mixing — `a_side` algorithm receiving a `b_side.N`
+  (Phase 3); (2) unqualified boxing when only named impls exist
+  (Phase 3); (3) §6.1 rebind contradiction (Phase 4); (4) chase
+  failure showing the full inferred-binding chain, not a generic
+  "type mismatch" (Phase 2); (5) runtime-varying interface value in
+  an unsupported position gets a clear diagnostic, never a silent
+  fallback (all phases).
 
 ---
 
