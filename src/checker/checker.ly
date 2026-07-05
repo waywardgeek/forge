@@ -66,6 +66,7 @@ lyric checker {
     type_param_constraints: [string]
     implements_list: [string]   // interface names this class implements
     sub_scope_labels: Dict<Sym, bool>  // relation labels (one entry per SubScope on this class)
+    family_params: [string]  // for interfaces: type params in receiver position (family members)
   }
 
   permanent class VariantInfo {
@@ -344,6 +345,7 @@ lyric checker {
       type_param_constraints: [],
       implements_list: [],
       sub_scope_labels: Dict<Sym, bool>(),
+      family_params: [],
     }
     self.registry.register(name, info)
     self.scope.define(name, t)
@@ -1326,6 +1328,7 @@ lyric checker {
           type_param_constraints: [],
           implements_list: [],
       sub_scope_labels: Dict<Sym, bool>(),
+      family_params: [],
         }
         self.registry.register(iname, stub)
       }
@@ -1344,6 +1347,7 @@ lyric checker {
           type_param_constraints: [],
           implements_list: [],
       sub_scope_labels: Dict<Sym, bool>(),
+      family_params: [],
         }
         self.registry.register(sname, stub)
       }
@@ -1362,6 +1366,7 @@ lyric checker {
           type_param_constraints: [],
           implements_list: [],
       sub_scope_labels: Dict<Sym, bool>(),
+      family_params: [],
         }
         self.registry.register(cname, stub)
       }
@@ -1380,6 +1385,7 @@ lyric checker {
           type_param_constraints: [],
           implements_list: [],
       sub_scope_labels: Dict<Sym, bool>(),
+      family_params: [],
         }
         self.registry.register(ename, stub)
       }
@@ -1444,6 +1450,7 @@ lyric checker {
           type_param_constraints: [],
           implements_list: [],
       sub_scope_labels: Dict<Sym, bool>(),
+      family_params: [],
         }
         self.registry.register(aname, info)
         self.scope.define(aname, t)
@@ -1745,6 +1752,7 @@ lyric checker {
         type_param_constraints: [],
         implements_list: [],
       sub_scope_labels: Dict<Sym, bool>(),
+      family_params: [],
       }
       self.registry.register(iname, info)
       info_opt = self.registry.lookup(iname)
@@ -1791,6 +1799,23 @@ lyric checker {
       }
     }
 
+    // Family classifier: type params appearing in receiver position are family members.
+    // Each family member gets its own vtable; non-family (value) params are not yet supported.
+    let receiver_params = Dict<Sym, bool>()
+    for m in imethods {
+      if m.receiver_type != null {
+        receiver_params.set(m.receiver_type!, true)
+      }
+    }
+    for tp in itparams {
+      if tp.name != null {
+        let tpname = sym_to_string(tp.name!)
+        if receiver_params.has(tp.name!) {
+          append(info.family_params, tpname)
+        }
+      }
+    }
+
     self.pop_scope()
     // self.registry.register(iname, info) // Already in registry
   }
@@ -1812,6 +1837,7 @@ lyric checker {
         type_param_constraints: [],
         implements_list: [],
       sub_scope_labels: Dict<Sym, bool>(),
+      family_params: [],
       }
       self.registry.register(sname, info)
       info_opt = self.registry.lookup(sname)
@@ -1879,6 +1905,7 @@ lyric checker {
         type_param_constraints: [],
         implements_list: [],
       sub_scope_labels: Dict<Sym, bool>(),
+      family_params: [],
       }
       self.registry.register(cname, info)
       info_opt = self.registry.lookup(cname)
@@ -2052,6 +2079,7 @@ lyric checker {
         type_param_constraints: [],
         implements_list: [],
       sub_scope_labels: Dict<Sym, bool>(),
+      family_params: [],
       }
       self.registry.register(ename, info)
       info_opt = self.registry.lookup(ename)

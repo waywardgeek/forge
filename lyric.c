@@ -2659,6 +2659,7 @@ typedef struct {
     LyricSlice_lyric_string* type_param_constraints;
     LyricSlice_lyric_string* implements_list;
     Dict_CSym_bool* sub_scope_labels;
+    LyricSlice_lyric_string* family_params;
     uint32_t* lyric_next;
     uint32_t used;
     uint32_t cap;
@@ -5108,6 +5109,7 @@ static TypeInfo _lyric_slab_alloc_TypeInfo(void) {
             _lyric_slab_TypeInfo.type_param_constraints = (LyricSlice_lyric_string*)realloc(_lyric_slab_TypeInfo.type_param_constraints, new_cap * sizeof(LyricSlice_lyric_string));
             _lyric_slab_TypeInfo.implements_list = (LyricSlice_lyric_string*)realloc(_lyric_slab_TypeInfo.implements_list, new_cap * sizeof(LyricSlice_lyric_string));
             _lyric_slab_TypeInfo.sub_scope_labels = (Dict_CSym_bool*)realloc(_lyric_slab_TypeInfo.sub_scope_labels, new_cap * sizeof(Dict_CSym_bool));
+            _lyric_slab_TypeInfo.family_params = (LyricSlice_lyric_string*)realloc(_lyric_slab_TypeInfo.family_params, new_cap * sizeof(LyricSlice_lyric_string));
             _lyric_slab_TypeInfo.lyric_next = (uint32_t*)realloc(_lyric_slab_TypeInfo.lyric_next, new_cap * sizeof(uint32_t));
             _lyric_slab_TypeInfo.cap = new_cap;
         }
@@ -5122,6 +5124,7 @@ static TypeInfo _lyric_slab_alloc_TypeInfo(void) {
     _lyric_slab_TypeInfo.type_param_constraints[h] = lyric_slice_empty(LyricSlice_lyric_string);
     _lyric_slab_TypeInfo.implements_list[h] = lyric_slice_empty(LyricSlice_lyric_string);
     _lyric_slab_TypeInfo.sub_scope_labels[h] = 0;
+    _lyric_slab_TypeInfo.family_params[h] = lyric_slice_empty(LyricSlice_lyric_string);
     return h;
 }
 
@@ -10910,6 +10913,9 @@ static lyric_string TypeInfo_to_string(TypeInfo v) {
     _result = lyric_str_concat(_result, LYRIC_STR(", "));
     _result = lyric_str_concat(_result, LYRIC_STR("sub_scope_labels: "));
     _result = lyric_str_concat(_result, (_lyric_slab_TypeInfo.sub_scope_labels[v] == 0 ? LYRIC_STR("null") : Dict_CSym_bool_to_string(_lyric_slab_TypeInfo.sub_scope_labels[v])));
+    _result = lyric_str_concat(_result, LYRIC_STR(", "));
+    _result = lyric_str_concat(_result, LYRIC_STR("family_params: "));
+    _result = lyric_str_concat(_result, LYRIC_STR("<>"));
     _result = lyric_str_concat(_result, LYRIC_STR("}"));
     return _result;
 }
@@ -37540,21 +37546,23 @@ void Checker_register_primitive_type(Checker self, lyric_string name, Type t) {
     LyricSlice_lyric_string _t5 = lyric_slice_empty(LyricSlice_lyric_string);
     LyricSlice_lyric_string _t6 = lyric_slice_empty(LyricSlice_lyric_string);
     Dict_CSym_bool _t7 = _lyric_slab_alloc_Dict_CSym_bool();
-    TypeInfo _t8 = _lyric_slab_alloc_TypeInfo();
-    _lyric_slab_TypeInfo.type_val[_t8] = t;
-    _lyric_slab_TypeInfo.fields[_t8] = _t0;
-    _lyric_slab_TypeInfo.field_order[_t8] = _t1;
-    _lyric_slab_TypeInfo.methods[_t8] = _t2;
-    _lyric_slab_TypeInfo.variants[_t8] = _t3;
-    _lyric_slab_TypeInfo.type_param_names[_t8] = _t4;
-    _lyric_slab_TypeInfo.type_param_constraints[_t8] = _t5;
-    _lyric_slab_TypeInfo.implements_list[_t8] = _t6;
-    _lyric_slab_TypeInfo.sub_scope_labels[_t8] = _t7;
-    TypeInfo info = _t8;
-    Registry _t9 = _lyric_slab_Checker.registry[self];
-    Registry_register(_t9, name, info);
-    Scope _t11 = _lyric_slab_Checker.scope[self];
-    Scope_define(_t11, name, t);
+    LyricSlice_lyric_string _t8 = lyric_slice_empty(LyricSlice_lyric_string);
+    TypeInfo _t9 = _lyric_slab_alloc_TypeInfo();
+    _lyric_slab_TypeInfo.type_val[_t9] = t;
+    _lyric_slab_TypeInfo.fields[_t9] = _t0;
+    _lyric_slab_TypeInfo.field_order[_t9] = _t1;
+    _lyric_slab_TypeInfo.methods[_t9] = _t2;
+    _lyric_slab_TypeInfo.variants[_t9] = _t3;
+    _lyric_slab_TypeInfo.type_param_names[_t9] = _t4;
+    _lyric_slab_TypeInfo.type_param_constraints[_t9] = _t5;
+    _lyric_slab_TypeInfo.implements_list[_t9] = _t6;
+    _lyric_slab_TypeInfo.sub_scope_labels[_t9] = _t7;
+    _lyric_slab_TypeInfo.family_params[_t9] = _t8;
+    TypeInfo info = _t9;
+    Registry _t10 = _lyric_slab_Checker.registry[self];
+    Registry_register(_t10, name, info);
+    Scope _t12 = _lyric_slab_Checker.scope[self];
+    Scope_define(_t12, name, t);
 }
 
 void Checker_register_go_stdlib_modules(Checker self) {
@@ -40163,124 +40171,132 @@ void Checker_preregister_type_names(Checker self, LyricBlock block) {
             LyricSlice_lyric_string _t21 = lyric_slice_empty(LyricSlice_lyric_string);
             LyricSlice_lyric_string _t22 = lyric_slice_empty(LyricSlice_lyric_string);
             Dict_CSym_bool _t23 = _lyric_slab_alloc_Dict_CSym_bool();
-            TypeInfo _t24 = _lyric_slab_alloc_TypeInfo();
-            _lyric_slab_TypeInfo.type_val[_t24] = _t15;
-            _lyric_slab_TypeInfo.fields[_t24] = _t16;
-            _lyric_slab_TypeInfo.field_order[_t24] = _t17;
-            _lyric_slab_TypeInfo.methods[_t24] = _t18;
-            _lyric_slab_TypeInfo.variants[_t24] = _t19;
-            _lyric_slab_TypeInfo.type_param_names[_t24] = _t20;
-            _lyric_slab_TypeInfo.type_param_constraints[_t24] = _t21;
-            _lyric_slab_TypeInfo.implements_list[_t24] = _t22;
-            _lyric_slab_TypeInfo.sub_scope_labels[_t24] = _t23;
-            TypeInfo stub = _t24;
-            Registry _t25 = _lyric_slab_Checker.registry[self];
-            Registry_register(_t25, iname, stub);
+            LyricSlice_lyric_string _t24 = lyric_slice_empty(LyricSlice_lyric_string);
+            TypeInfo _t25 = _lyric_slab_alloc_TypeInfo();
+            _lyric_slab_TypeInfo.type_val[_t25] = _t15;
+            _lyric_slab_TypeInfo.fields[_t25] = _t16;
+            _lyric_slab_TypeInfo.field_order[_t25] = _t17;
+            _lyric_slab_TypeInfo.methods[_t25] = _t18;
+            _lyric_slab_TypeInfo.variants[_t25] = _t19;
+            _lyric_slab_TypeInfo.type_param_names[_t25] = _t20;
+            _lyric_slab_TypeInfo.type_param_constraints[_t25] = _t21;
+            _lyric_slab_TypeInfo.implements_list[_t25] = _t22;
+            _lyric_slab_TypeInfo.sub_scope_labels[_t25] = _t23;
+            _lyric_slab_TypeInfo.family_params[_t25] = _t24;
+            TypeInfo stub = _t25;
+            Registry _t26 = _lyric_slab_Checker.registry[self];
+            Registry_register(_t26, iname, stub);
         }
     }
-    LyricSlice_StructDecl _t27 = LyricBlock___sd_children(block);
-    LyricSlice_StructDecl structs = _t27;
+    LyricSlice_StructDecl _t28 = LyricBlock___sd_children(block);
+    LyricSlice_StructDecl structs = _t28;
     for (int32_t _idx = 0; _idx < structs.len; _idx++) {
         StructDecl s = structs.data[_idx];
-        Sym _t28 = _lyric_slab_StructDecl.name[s];
-        bool _t29 = (_t28 != 0);
-        if (_t29) {
-            Sym _t30 = _lyric_slab_StructDecl.name[s];
-            Sym _t31 = lyric_unwrap_class(_t30);
-            lyric_string _t32 = sym_to_string(_t31);
-            lyric_string sname = _t32;
-            Type _t33 = make_struct_type(sname);
-            Dict_CSym_CType _t34 = _lyric_slab_alloc_Dict_CSym_CType();
-            LyricSlice_lyric_string _t35 = lyric_slice_empty(LyricSlice_lyric_string);
-            Dict_CSym_CType _t36 = _lyric_slab_alloc_Dict_CSym_CType();
-            Dict_CSym_CVariantInfo _t37 = _lyric_slab_alloc_Dict_CSym_CVariantInfo();
-            LyricSlice_lyric_string _t38 = lyric_slice_empty(LyricSlice_lyric_string);
+        Sym _t29 = _lyric_slab_StructDecl.name[s];
+        bool _t30 = (_t29 != 0);
+        if (_t30) {
+            Sym _t31 = _lyric_slab_StructDecl.name[s];
+            Sym _t32 = lyric_unwrap_class(_t31);
+            lyric_string _t33 = sym_to_string(_t32);
+            lyric_string sname = _t33;
+            Type _t34 = make_struct_type(sname);
+            Dict_CSym_CType _t35 = _lyric_slab_alloc_Dict_CSym_CType();
+            LyricSlice_lyric_string _t36 = lyric_slice_empty(LyricSlice_lyric_string);
+            Dict_CSym_CType _t37 = _lyric_slab_alloc_Dict_CSym_CType();
+            Dict_CSym_CVariantInfo _t38 = _lyric_slab_alloc_Dict_CSym_CVariantInfo();
             LyricSlice_lyric_string _t39 = lyric_slice_empty(LyricSlice_lyric_string);
             LyricSlice_lyric_string _t40 = lyric_slice_empty(LyricSlice_lyric_string);
-            Dict_CSym_bool _t41 = _lyric_slab_alloc_Dict_CSym_bool();
-            TypeInfo _t42 = _lyric_slab_alloc_TypeInfo();
-            _lyric_slab_TypeInfo.type_val[_t42] = _t33;
-            _lyric_slab_TypeInfo.fields[_t42] = _t34;
-            _lyric_slab_TypeInfo.field_order[_t42] = _t35;
-            _lyric_slab_TypeInfo.methods[_t42] = _t36;
-            _lyric_slab_TypeInfo.variants[_t42] = _t37;
-            _lyric_slab_TypeInfo.type_param_names[_t42] = _t38;
-            _lyric_slab_TypeInfo.type_param_constraints[_t42] = _t39;
-            _lyric_slab_TypeInfo.implements_list[_t42] = _t40;
-            _lyric_slab_TypeInfo.sub_scope_labels[_t42] = _t41;
-            TypeInfo stub = _t42;
-            Registry _t43 = _lyric_slab_Checker.registry[self];
-            Registry_register(_t43, sname, stub);
+            LyricSlice_lyric_string _t41 = lyric_slice_empty(LyricSlice_lyric_string);
+            Dict_CSym_bool _t42 = _lyric_slab_alloc_Dict_CSym_bool();
+            LyricSlice_lyric_string _t43 = lyric_slice_empty(LyricSlice_lyric_string);
+            TypeInfo _t44 = _lyric_slab_alloc_TypeInfo();
+            _lyric_slab_TypeInfo.type_val[_t44] = _t34;
+            _lyric_slab_TypeInfo.fields[_t44] = _t35;
+            _lyric_slab_TypeInfo.field_order[_t44] = _t36;
+            _lyric_slab_TypeInfo.methods[_t44] = _t37;
+            _lyric_slab_TypeInfo.variants[_t44] = _t38;
+            _lyric_slab_TypeInfo.type_param_names[_t44] = _t39;
+            _lyric_slab_TypeInfo.type_param_constraints[_t44] = _t40;
+            _lyric_slab_TypeInfo.implements_list[_t44] = _t41;
+            _lyric_slab_TypeInfo.sub_scope_labels[_t44] = _t42;
+            _lyric_slab_TypeInfo.family_params[_t44] = _t43;
+            TypeInfo stub = _t44;
+            Registry _t45 = _lyric_slab_Checker.registry[self];
+            Registry_register(_t45, sname, stub);
         }
     }
-    LyricSlice_ClassDecl _t45 = LyricBlock___cd_children(block);
-    LyricSlice_ClassDecl classes = _t45;
+    LyricSlice_ClassDecl _t47 = LyricBlock___cd_children(block);
+    LyricSlice_ClassDecl classes = _t47;
     for (int32_t _idx = 0; _idx < classes.len; _idx++) {
         ClassDecl c = classes.data[_idx];
-        Sym _t46 = _lyric_slab_ClassDecl.name[c];
-        bool _t47 = (_t46 != 0);
-        if (_t47) {
-            Sym _t48 = _lyric_slab_ClassDecl.name[c];
-            Sym _t49 = lyric_unwrap_class(_t48);
-            lyric_string _t50 = sym_to_string(_t49);
-            lyric_string cname = _t50;
-            Type _t51 = make_class_type(cname);
-            Dict_CSym_CType _t52 = _lyric_slab_alloc_Dict_CSym_CType();
-            LyricSlice_lyric_string _t53 = lyric_slice_empty(LyricSlice_lyric_string);
+        Sym _t48 = _lyric_slab_ClassDecl.name[c];
+        bool _t49 = (_t48 != 0);
+        if (_t49) {
+            Sym _t50 = _lyric_slab_ClassDecl.name[c];
+            Sym _t51 = lyric_unwrap_class(_t50);
+            lyric_string _t52 = sym_to_string(_t51);
+            lyric_string cname = _t52;
+            Type _t53 = make_class_type(cname);
             Dict_CSym_CType _t54 = _lyric_slab_alloc_Dict_CSym_CType();
-            Dict_CSym_CVariantInfo _t55 = _lyric_slab_alloc_Dict_CSym_CVariantInfo();
-            LyricSlice_lyric_string _t56 = lyric_slice_empty(LyricSlice_lyric_string);
-            LyricSlice_lyric_string _t57 = lyric_slice_empty(LyricSlice_lyric_string);
+            LyricSlice_lyric_string _t55 = lyric_slice_empty(LyricSlice_lyric_string);
+            Dict_CSym_CType _t56 = _lyric_slab_alloc_Dict_CSym_CType();
+            Dict_CSym_CVariantInfo _t57 = _lyric_slab_alloc_Dict_CSym_CVariantInfo();
             LyricSlice_lyric_string _t58 = lyric_slice_empty(LyricSlice_lyric_string);
-            Dict_CSym_bool _t59 = _lyric_slab_alloc_Dict_CSym_bool();
-            TypeInfo _t60 = _lyric_slab_alloc_TypeInfo();
-            _lyric_slab_TypeInfo.type_val[_t60] = _t51;
-            _lyric_slab_TypeInfo.fields[_t60] = _t52;
-            _lyric_slab_TypeInfo.field_order[_t60] = _t53;
-            _lyric_slab_TypeInfo.methods[_t60] = _t54;
-            _lyric_slab_TypeInfo.variants[_t60] = _t55;
-            _lyric_slab_TypeInfo.type_param_names[_t60] = _t56;
-            _lyric_slab_TypeInfo.type_param_constraints[_t60] = _t57;
-            _lyric_slab_TypeInfo.implements_list[_t60] = _t58;
-            _lyric_slab_TypeInfo.sub_scope_labels[_t60] = _t59;
-            TypeInfo stub = _t60;
-            Registry _t61 = _lyric_slab_Checker.registry[self];
-            Registry_register(_t61, cname, stub);
+            LyricSlice_lyric_string _t59 = lyric_slice_empty(LyricSlice_lyric_string);
+            LyricSlice_lyric_string _t60 = lyric_slice_empty(LyricSlice_lyric_string);
+            Dict_CSym_bool _t61 = _lyric_slab_alloc_Dict_CSym_bool();
+            LyricSlice_lyric_string _t62 = lyric_slice_empty(LyricSlice_lyric_string);
+            TypeInfo _t63 = _lyric_slab_alloc_TypeInfo();
+            _lyric_slab_TypeInfo.type_val[_t63] = _t53;
+            _lyric_slab_TypeInfo.fields[_t63] = _t54;
+            _lyric_slab_TypeInfo.field_order[_t63] = _t55;
+            _lyric_slab_TypeInfo.methods[_t63] = _t56;
+            _lyric_slab_TypeInfo.variants[_t63] = _t57;
+            _lyric_slab_TypeInfo.type_param_names[_t63] = _t58;
+            _lyric_slab_TypeInfo.type_param_constraints[_t63] = _t59;
+            _lyric_slab_TypeInfo.implements_list[_t63] = _t60;
+            _lyric_slab_TypeInfo.sub_scope_labels[_t63] = _t61;
+            _lyric_slab_TypeInfo.family_params[_t63] = _t62;
+            TypeInfo stub = _t63;
+            Registry _t64 = _lyric_slab_Checker.registry[self];
+            Registry_register(_t64, cname, stub);
         }
     }
-    LyricSlice_EnumDecl _t63 = LyricBlock___ed_children(block);
-    LyricSlice_EnumDecl enums = _t63;
+    LyricSlice_EnumDecl _t66 = LyricBlock___ed_children(block);
+    LyricSlice_EnumDecl enums = _t66;
     for (int32_t _idx = 0; _idx < enums.len; _idx++) {
         EnumDecl e = enums.data[_idx];
-        Sym _t64 = _lyric_slab_EnumDecl.name[e];
-        bool _t65 = (_t64 != 0);
-        if (_t65) {
-            Sym _t66 = _lyric_slab_EnumDecl.name[e];
-            Sym _t67 = lyric_unwrap_class(_t66);
-            lyric_string _t68 = sym_to_string(_t67);
-            lyric_string ename = _t68;
-            Type _t69 = make_enum_type(ename);
-            Dict_CSym_CType _t70 = _lyric_slab_alloc_Dict_CSym_CType();
-            LyricSlice_lyric_string _t71 = lyric_slice_empty(LyricSlice_lyric_string);
-            Dict_CSym_CType _t72 = _lyric_slab_alloc_Dict_CSym_CType();
-            Dict_CSym_CVariantInfo _t73 = _lyric_slab_alloc_Dict_CSym_CVariantInfo();
+        Sym _t67 = _lyric_slab_EnumDecl.name[e];
+        bool _t68 = (_t67 != 0);
+        if (_t68) {
+            Sym _t69 = _lyric_slab_EnumDecl.name[e];
+            Sym _t70 = lyric_unwrap_class(_t69);
+            lyric_string _t71 = sym_to_string(_t70);
+            lyric_string ename = _t71;
+            Type _t72 = make_enum_type(ename);
+            Dict_CSym_CType _t73 = _lyric_slab_alloc_Dict_CSym_CType();
             LyricSlice_lyric_string _t74 = lyric_slice_empty(LyricSlice_lyric_string);
-            LyricSlice_lyric_string _t75 = lyric_slice_empty(LyricSlice_lyric_string);
-            LyricSlice_lyric_string _t76 = lyric_slice_empty(LyricSlice_lyric_string);
-            Dict_CSym_bool _t77 = _lyric_slab_alloc_Dict_CSym_bool();
-            TypeInfo _t78 = _lyric_slab_alloc_TypeInfo();
-            _lyric_slab_TypeInfo.type_val[_t78] = _t69;
-            _lyric_slab_TypeInfo.fields[_t78] = _t70;
-            _lyric_slab_TypeInfo.field_order[_t78] = _t71;
-            _lyric_slab_TypeInfo.methods[_t78] = _t72;
-            _lyric_slab_TypeInfo.variants[_t78] = _t73;
-            _lyric_slab_TypeInfo.type_param_names[_t78] = _t74;
-            _lyric_slab_TypeInfo.type_param_constraints[_t78] = _t75;
-            _lyric_slab_TypeInfo.implements_list[_t78] = _t76;
-            _lyric_slab_TypeInfo.sub_scope_labels[_t78] = _t77;
-            TypeInfo stub = _t78;
-            Registry _t79 = _lyric_slab_Checker.registry[self];
-            Registry_register(_t79, ename, stub);
+            Dict_CSym_CType _t75 = _lyric_slab_alloc_Dict_CSym_CType();
+            Dict_CSym_CVariantInfo _t76 = _lyric_slab_alloc_Dict_CSym_CVariantInfo();
+            LyricSlice_lyric_string _t77 = lyric_slice_empty(LyricSlice_lyric_string);
+            LyricSlice_lyric_string _t78 = lyric_slice_empty(LyricSlice_lyric_string);
+            LyricSlice_lyric_string _t79 = lyric_slice_empty(LyricSlice_lyric_string);
+            Dict_CSym_bool _t80 = _lyric_slab_alloc_Dict_CSym_bool();
+            LyricSlice_lyric_string _t81 = lyric_slice_empty(LyricSlice_lyric_string);
+            TypeInfo _t82 = _lyric_slab_alloc_TypeInfo();
+            _lyric_slab_TypeInfo.type_val[_t82] = _t72;
+            _lyric_slab_TypeInfo.fields[_t82] = _t73;
+            _lyric_slab_TypeInfo.field_order[_t82] = _t74;
+            _lyric_slab_TypeInfo.methods[_t82] = _t75;
+            _lyric_slab_TypeInfo.variants[_t82] = _t76;
+            _lyric_slab_TypeInfo.type_param_names[_t82] = _t77;
+            _lyric_slab_TypeInfo.type_param_constraints[_t82] = _t78;
+            _lyric_slab_TypeInfo.implements_list[_t82] = _t79;
+            _lyric_slab_TypeInfo.sub_scope_labels[_t82] = _t80;
+            _lyric_slab_TypeInfo.family_params[_t82] = _t81;
+            TypeInfo stub = _t82;
+            Registry _t83 = _lyric_slab_Checker.registry[self];
+            Registry_register(_t83, ename, stub);
         }
     }
 }
@@ -40362,67 +40378,69 @@ void Checker_register_lyric_block(Checker self, LyricBlock block) {
             LyricSlice_lyric_string _t34 = lyric_slice_empty(LyricSlice_lyric_string);
             LyricSlice_lyric_string _t35 = lyric_slice_empty(LyricSlice_lyric_string);
             Dict_CSym_bool _t36 = _lyric_slab_alloc_Dict_CSym_bool();
-            TypeInfo _t37 = _lyric_slab_alloc_TypeInfo();
-            _lyric_slab_TypeInfo.type_val[_t37] = t;
-            _lyric_slab_TypeInfo.fields[_t37] = _t29;
-            _lyric_slab_TypeInfo.field_order[_t37] = _t30;
-            _lyric_slab_TypeInfo.methods[_t37] = _t31;
-            _lyric_slab_TypeInfo.variants[_t37] = _t32;
-            _lyric_slab_TypeInfo.type_param_names[_t37] = _t33;
-            _lyric_slab_TypeInfo.type_param_constraints[_t37] = _t34;
-            _lyric_slab_TypeInfo.implements_list[_t37] = _t35;
-            _lyric_slab_TypeInfo.sub_scope_labels[_t37] = _t36;
-            TypeInfo info = _t37;
-            Registry _t38 = _lyric_slab_Checker.registry[self];
-            Registry_register(_t38, aname, info);
-            Scope _t40 = _lyric_slab_Checker.scope[self];
-            Scope_define(_t40, aname, t);
+            LyricSlice_lyric_string _t37 = lyric_slice_empty(LyricSlice_lyric_string);
+            TypeInfo _t38 = _lyric_slab_alloc_TypeInfo();
+            _lyric_slab_TypeInfo.type_val[_t38] = t;
+            _lyric_slab_TypeInfo.fields[_t38] = _t29;
+            _lyric_slab_TypeInfo.field_order[_t38] = _t30;
+            _lyric_slab_TypeInfo.methods[_t38] = _t31;
+            _lyric_slab_TypeInfo.variants[_t38] = _t32;
+            _lyric_slab_TypeInfo.type_param_names[_t38] = _t33;
+            _lyric_slab_TypeInfo.type_param_constraints[_t38] = _t34;
+            _lyric_slab_TypeInfo.implements_list[_t38] = _t35;
+            _lyric_slab_TypeInfo.sub_scope_labels[_t38] = _t36;
+            _lyric_slab_TypeInfo.family_params[_t38] = _t37;
+            TypeInfo info = _t38;
+            Registry _t39 = _lyric_slab_Checker.registry[self];
+            Registry_register(_t39, aname, info);
+            Scope _t41 = _lyric_slab_Checker.scope[self];
+            Scope_define(_t41, aname, t);
         }
     }
-    LyricSlice_ConstDecl _t42 = LyricBlock___con_children(block);
-    LyricSlice_ConstDecl consts = _t42;
+    LyricSlice_ConstDecl _t43 = LyricBlock___con_children(block);
+    LyricSlice_ConstDecl consts = _t43;
     for (int32_t _idx = 0; _idx < consts.len; _idx++) {
         ConstDecl c = consts.data[_idx];
-        Sym _t43 = _lyric_slab_ConstDecl.name[c];
-        bool _t44 = (_t43 != 0);
-        if (_t44) {
-            Sym _t45 = _lyric_slab_ConstDecl.name[c];
-            Sym _t46 = lyric_unwrap_class(_t45);
-            lyric_string _t47 = sym_to_string(_t46);
-            lyric_string cname = _t47;
-            Type _t48 = make_any_type();
-            Type ct = _t48;
-            TypeExpr _t49 = _lyric_slab_ConstDecl.type_expr[c];
-            bool _t50 = (_t49 != 0);
-            if (_t50) {
-                TypeExpr _t51 = _lyric_slab_ConstDecl.type_expr[c];
-                TypeExpr _t52 = lyric_unwrap_class(_t51);
-                Type _t53 = Checker_resolve_type_expr(self, _t52);
-                ct = _t53;
-                Expr _t54 = _lyric_slab_ConstDecl.value[c];
-                bool _t55 = (_t54 != 0);
-                if (_t55) {
-                    Expr _t56 = _lyric_slab_ConstDecl.value[c];
-                    Expr _t57 = lyric_unwrap_class(_t56);
-                    Type _t58 = Checker_check_expr(self, _t57);
-                    _t58;
+        Sym _t44 = _lyric_slab_ConstDecl.name[c];
+        bool _t45 = (_t44 != 0);
+        if (_t45) {
+            Sym _t46 = _lyric_slab_ConstDecl.name[c];
+            Sym _t47 = lyric_unwrap_class(_t46);
+            lyric_string _t48 = sym_to_string(_t47);
+            lyric_string cname = _t48;
+            Type _t49 = make_any_type();
+            Type ct = _t49;
+            TypeExpr _t50 = _lyric_slab_ConstDecl.type_expr[c];
+            bool _t51 = (_t50 != 0);
+            if (_t51) {
+                TypeExpr _t52 = _lyric_slab_ConstDecl.type_expr[c];
+                TypeExpr _t53 = lyric_unwrap_class(_t52);
+                Type _t54 = Checker_resolve_type_expr(self, _t53);
+                ct = _t54;
+                Expr _t55 = _lyric_slab_ConstDecl.value[c];
+                bool _t56 = (_t55 != 0);
+                if (_t56) {
+                    Expr _t57 = _lyric_slab_ConstDecl.value[c];
+                    Expr _t58 = lyric_unwrap_class(_t57);
+                    Type _t59 = Checker_check_expr(self, _t58);
+                    _t59;
                 }
             } else {
-                Expr _t59 = _lyric_slab_ConstDecl.value[c];
-                bool _t60 = (_t59 != 0);
-                if (_t60) {
-                    Expr _t61 = _lyric_slab_ConstDecl.value[c];
-                    Expr _t62 = lyric_unwrap_class(_t61);
-                    Type _t63 = Checker_check_expr(self, _t62);
-                    ct = _t63;
+                Expr _t60 = _lyric_slab_ConstDecl.value[c];
+                bool _t61 = (_t60 != 0);
+                if (_t61) {
+                    Expr _t62 = _lyric_slab_ConstDecl.value[c];
+                    Expr _t63 = lyric_unwrap_class(_t62);
+                    Type _t64 = Checker_check_expr(self, _t63);
+                    ct = _t64;
                 }
             }
-            Scope _t64 = _lyric_slab_Checker.scope[self];
-            Scope_define(_t64, cname, ct);
+            Scope _t65 = _lyric_slab_Checker.scope[self];
+            Scope_define(_t65, cname, ct);
         }
     }
-    LyricSlice_FuncDecl _t66 = LyricBlock___fd_children(block);
-    LyricSlice_FuncDecl funcs = _t66;
+    LyricSlice_FuncDecl _t67 = LyricBlock___fd_children(block);
+    LyricSlice_FuncDecl funcs = _t67;
     for (int32_t _idx = 0; _idx < funcs.len; _idx++) {
         FuncDecl f = funcs.data[_idx];
         Checker_register_func(self, f);
@@ -41026,66 +41044,68 @@ void Checker_register_interface(Checker self, InterfaceDecl iface) {
         LyricSlice_lyric_string _t17 = lyric_slice_empty(LyricSlice_lyric_string);
         LyricSlice_lyric_string _t18 = lyric_slice_empty(LyricSlice_lyric_string);
         Dict_CSym_bool _t19 = _lyric_slab_alloc_Dict_CSym_bool();
-        TypeInfo _t20 = _lyric_slab_alloc_TypeInfo();
-        _lyric_slab_TypeInfo.type_val[_t20] = _t11;
-        _lyric_slab_TypeInfo.fields[_t20] = _t12;
-        _lyric_slab_TypeInfo.field_order[_t20] = _t13;
-        _lyric_slab_TypeInfo.methods[_t20] = _t14;
-        _lyric_slab_TypeInfo.variants[_t20] = _t15;
-        _lyric_slab_TypeInfo.type_param_names[_t20] = _t16;
-        _lyric_slab_TypeInfo.type_param_constraints[_t20] = _t17;
-        _lyric_slab_TypeInfo.implements_list[_t20] = _t18;
-        _lyric_slab_TypeInfo.sub_scope_labels[_t20] = _t19;
-        TypeInfo info = _t20;
-        Registry _t21 = _lyric_slab_Checker.registry[self];
-        Registry_register(_t21, iname, info);
-        Registry _t23 = _lyric_slab_Checker.registry[self];
-        TypeInfo _t24 = Registry_lookup(_t23, iname);
-        info_opt = _t24;
+        LyricSlice_lyric_string _t20 = lyric_slice_empty(LyricSlice_lyric_string);
+        TypeInfo _t21 = _lyric_slab_alloc_TypeInfo();
+        _lyric_slab_TypeInfo.type_val[_t21] = _t11;
+        _lyric_slab_TypeInfo.fields[_t21] = _t12;
+        _lyric_slab_TypeInfo.field_order[_t21] = _t13;
+        _lyric_slab_TypeInfo.methods[_t21] = _t14;
+        _lyric_slab_TypeInfo.variants[_t21] = _t15;
+        _lyric_slab_TypeInfo.type_param_names[_t21] = _t16;
+        _lyric_slab_TypeInfo.type_param_constraints[_t21] = _t17;
+        _lyric_slab_TypeInfo.implements_list[_t21] = _t18;
+        _lyric_slab_TypeInfo.sub_scope_labels[_t21] = _t19;
+        _lyric_slab_TypeInfo.family_params[_t21] = _t20;
+        TypeInfo info = _t21;
+        Registry _t22 = _lyric_slab_Checker.registry[self];
+        Registry_register(_t22, iname, info);
+        Registry _t24 = _lyric_slab_Checker.registry[self];
+        TypeInfo _t25 = Registry_lookup(_t24, iname);
+        info_opt = _t25;
     }
-    TypeInfo _t25 = lyric_unwrap_class(info_opt);
-    TypeInfo info = _t25;
-    LyricSlice_TypeParam _t26 = InterfaceDecl___itp_children(iface);
-    LyricSlice_TypeParam itparams = _t26;
+    TypeInfo _t26 = lyric_unwrap_class(info_opt);
+    TypeInfo info = _t26;
+    LyricSlice_TypeParam _t27 = InterfaceDecl___itp_children(iface);
+    LyricSlice_TypeParam itparams = _t27;
     for (int32_t _idx = 0; _idx < itparams.len; _idx++) {
         TypeParam tp = itparams.data[_idx];
-        Sym _t27 = _lyric_slab_TypeParam.name[tp];
-        bool _t28 = (_t27 != 0);
-        if (_t28) {
-            Sym _t29 = _lyric_slab_TypeParam.name[tp];
-            Sym _t30 = lyric_unwrap_class(_t29);
-            lyric_string _t31 = sym_to_string(_t30);
-            lyric_string tpname = _t31;
+        Sym _t28 = _lyric_slab_TypeParam.name[tp];
+        bool _t29 = (_t28 != 0);
+        if (_t29) {
+            Sym _t30 = _lyric_slab_TypeParam.name[tp];
+            Sym _t31 = lyric_unwrap_class(_t30);
+            lyric_string _t32 = sym_to_string(_t31);
+            lyric_string tpname = _t32;
             bool found = false;
-            LyricSlice_lyric_string _t32 = _lyric_slab_TypeInfo.type_param_names[info];
-            for (int32_t _idx = 0; _idx < _t32.len; _idx++) {
-                lyric_string existing_tp = _t32.data[_idx];
-                bool _t33 = lyric_str_eq(existing_tp, tpname);
-                if (_t33) {
+            LyricSlice_lyric_string _t33 = _lyric_slab_TypeInfo.type_param_names[info];
+            for (int32_t _idx = 0; _idx < _t33.len; _idx++) {
+                lyric_string existing_tp = _t33.data[_idx];
+                bool _t34 = lyric_str_eq(existing_tp, tpname);
+                if (_t34) {
                     found = true;
                 }
             }
-            bool _t34 = (!found);
-            if (_t34) {
-                LyricSlice_lyric_string _t35 = _lyric_slab_TypeInfo.type_param_names[info];
-                LyricSlice_lyric_string _t36 = ({ lyric_push(&_t35, tpname, LyricSlice_lyric_string); _t35; });
-                _lyric_slab_TypeInfo.type_param_names[info] = _t35;
-                _t36;
-                Sym _t37 = _lyric_slab_TypeParam.constraint[tp];
-                bool _t38 = (_t37 != 0);
-                if (_t38) {
-                    LyricSlice_lyric_string _t39 = _lyric_slab_TypeInfo.type_param_constraints[info];
-                    Sym _t40 = _lyric_slab_TypeParam.constraint[tp];
-                    Sym _t41 = lyric_unwrap_class(_t40);
-                    lyric_string _t42 = sym_to_string(_t41);
-                    LyricSlice_lyric_string _t43 = ({ lyric_push(&_t39, _t42, LyricSlice_lyric_string); _t39; });
-                    _lyric_slab_TypeInfo.type_param_constraints[info] = _t39;
-                    _t43;
+            bool _t35 = (!found);
+            if (_t35) {
+                LyricSlice_lyric_string _t36 = _lyric_slab_TypeInfo.type_param_names[info];
+                LyricSlice_lyric_string _t37 = ({ lyric_push(&_t36, tpname, LyricSlice_lyric_string); _t36; });
+                _lyric_slab_TypeInfo.type_param_names[info] = _t36;
+                _t37;
+                Sym _t38 = _lyric_slab_TypeParam.constraint[tp];
+                bool _t39 = (_t38 != 0);
+                if (_t39) {
+                    LyricSlice_lyric_string _t40 = _lyric_slab_TypeInfo.type_param_constraints[info];
+                    Sym _t41 = _lyric_slab_TypeParam.constraint[tp];
+                    Sym _t42 = lyric_unwrap_class(_t41);
+                    lyric_string _t43 = sym_to_string(_t42);
+                    LyricSlice_lyric_string _t44 = ({ lyric_push(&_t40, _t43, LyricSlice_lyric_string); _t40; });
+                    _lyric_slab_TypeInfo.type_param_constraints[info] = _t40;
+                    _t44;
                 } else {
-                    LyricSlice_lyric_string _t44 = _lyric_slab_TypeInfo.type_param_constraints[info];
-                    LyricSlice_lyric_string _t45 = ({ lyric_push(&_t44, LYRIC_STR(""), LyricSlice_lyric_string); _t44; });
-                    _lyric_slab_TypeInfo.type_param_constraints[info] = _t44;
-                    _t45;
+                    LyricSlice_lyric_string _t45 = _lyric_slab_TypeInfo.type_param_constraints[info];
+                    LyricSlice_lyric_string _t46 = ({ lyric_push(&_t45, LYRIC_STR(""), LyricSlice_lyric_string); _t45; });
+                    _lyric_slab_TypeInfo.type_param_constraints[info] = _t45;
+                    _t46;
                 }
             }
         }
@@ -41093,37 +41113,70 @@ void Checker_register_interface(Checker self, InterfaceDecl iface) {
     Checker_push_scope(self);
     for (int32_t _idx = 0; _idx < itparams.len; _idx++) {
         TypeParam tp = itparams.data[_idx];
-        Sym _t47 = _lyric_slab_TypeParam.name[tp];
-        bool _t48 = (_t47 != 0);
-        if (_t48) {
-            Sym _t49 = _lyric_slab_TypeParam.name[tp];
-            Sym _t50 = lyric_unwrap_class(_t49);
-            lyric_string _t51 = sym_to_string(_t50);
-            lyric_string tpname = _t51;
-            Scope _t52 = _lyric_slab_Checker.scope[self];
-            Type _t53 = make_typevar_type(tpname);
-            Scope_define(_t52, tpname, _t53);
+        Sym _t48 = _lyric_slab_TypeParam.name[tp];
+        bool _t49 = (_t48 != 0);
+        if (_t49) {
+            Sym _t50 = _lyric_slab_TypeParam.name[tp];
+            Sym _t51 = lyric_unwrap_class(_t50);
+            lyric_string _t52 = sym_to_string(_t51);
+            lyric_string tpname = _t52;
+            Scope _t53 = _lyric_slab_Checker.scope[self];
+            Type _t54 = make_typevar_type(tpname);
+            Scope_define(_t53, tpname, _t54);
         }
     }
-    LyricSlice_FuncDecl _t55 = InterfaceDecl___im_children(iface);
-    LyricSlice_FuncDecl imethods = _t55;
+    LyricSlice_FuncDecl _t56 = InterfaceDecl___im_children(iface);
+    LyricSlice_FuncDecl imethods = _t56;
     for (int32_t _idx = 0; _idx < imethods.len; _idx++) {
         FuncDecl m = imethods.data[_idx];
-        Type _t56 = Checker_func_decl_to_type(self, m);
-        Type ft = _t56;
-        Sym _t57 = _lyric_slab_FuncDecl.name[m];
-        bool _t58 = (_t57 != 0);
-        if (_t58) {
-            Sym _t59 = _lyric_slab_FuncDecl.name[m];
-            Sym _t60 = lyric_unwrap_class(_t59);
-            lyric_string _t61 = sym_to_string(_t60);
-            lyric_string mn = _t61;
-            Dict_CSym_CType _t62 = _lyric_slab_TypeInfo.methods[info];
-            Sym _t63 = sym(mn);
-            Dict_CSym_CType_set(_t62, _t63, ft);
+        Type _t57 = Checker_func_decl_to_type(self, m);
+        Type ft = _t57;
+        Sym _t58 = _lyric_slab_FuncDecl.name[m];
+        bool _t59 = (_t58 != 0);
+        if (_t59) {
+            Sym _t60 = _lyric_slab_FuncDecl.name[m];
+            Sym _t61 = lyric_unwrap_class(_t60);
+            lyric_string _t62 = sym_to_string(_t61);
+            lyric_string mn = _t62;
+            Dict_CSym_CType _t63 = _lyric_slab_TypeInfo.methods[info];
+            Sym _t64 = sym(mn);
+            Dict_CSym_CType_set(_t63, _t64, ft);
+        }
+    }
+    Dict_CSym_bool _t66 = _lyric_slab_alloc_Dict_CSym_bool();
+    Dict_CSym_bool receiver_params = _t66;
+    for (int32_t _idx = 0; _idx < imethods.len; _idx++) {
+        FuncDecl m = imethods.data[_idx];
+        Sym _t67 = _lyric_slab_FuncDecl.receiver_type[m];
+        bool _t68 = (_t67 != 0);
+        if (_t68) {
+            Sym _t69 = _lyric_slab_FuncDecl.receiver_type[m];
+            Sym _t70 = lyric_unwrap_class(_t69);
+            Dict_CSym_bool_set(receiver_params, _t70, true);
+        }
+    }
+    for (int32_t _idx = 0; _idx < itparams.len; _idx++) {
+        TypeParam tp = itparams.data[_idx];
+        Sym _t72 = _lyric_slab_TypeParam.name[tp];
+        bool _t73 = (_t72 != 0);
+        if (_t73) {
+            Sym _t74 = _lyric_slab_TypeParam.name[tp];
+            Sym _t75 = lyric_unwrap_class(_t74);
+            lyric_string _t76 = sym_to_string(_t75);
+            lyric_string tpname = _t76;
+            Sym _t77 = _lyric_slab_TypeParam.name[tp];
+            Sym _t78 = lyric_unwrap_class(_t77);
+            bool _t79 = Dict_CSym_bool_has(receiver_params, _t78);
+            if (_t79) {
+                LyricSlice_lyric_string _t80 = _lyric_slab_TypeInfo.family_params[info];
+                LyricSlice_lyric_string _t81 = ({ lyric_push(&_t80, tpname, LyricSlice_lyric_string); _t80; });
+                _lyric_slab_TypeInfo.family_params[info] = _t80;
+                _t81;
+            }
         }
     }
     Checker_pop_scope(self);
+    if (receiver_params && --_lyric_slab_Dict_CSym_bool._rc[receiver_params] == 0) Dict_CSym_bool_destroy(receiver_params);
 }
 
 void Checker_register_struct(Checker self, StructDecl s) {
@@ -41150,104 +41203,106 @@ void Checker_register_struct(Checker self, StructDecl s) {
         LyricSlice_lyric_string _t14 = lyric_slice_empty(LyricSlice_lyric_string);
         LyricSlice_lyric_string _t15 = lyric_slice_empty(LyricSlice_lyric_string);
         Dict_CSym_bool _t16 = _lyric_slab_alloc_Dict_CSym_bool();
-        TypeInfo _t17 = _lyric_slab_alloc_TypeInfo();
-        _lyric_slab_TypeInfo.type_val[_t17] = _t8;
-        _lyric_slab_TypeInfo.fields[_t17] = _t9;
-        _lyric_slab_TypeInfo.field_order[_t17] = _t10;
-        _lyric_slab_TypeInfo.methods[_t17] = _t11;
-        _lyric_slab_TypeInfo.variants[_t17] = _t12;
-        _lyric_slab_TypeInfo.type_param_names[_t17] = _t13;
-        _lyric_slab_TypeInfo.type_param_constraints[_t17] = _t14;
-        _lyric_slab_TypeInfo.implements_list[_t17] = _t15;
-        _lyric_slab_TypeInfo.sub_scope_labels[_t17] = _t16;
-        TypeInfo info = _t17;
-        Registry _t18 = _lyric_slab_Checker.registry[self];
-        Registry_register(_t18, sname, info);
-        Registry _t20 = _lyric_slab_Checker.registry[self];
-        TypeInfo _t21 = Registry_lookup(_t20, sname);
-        info_opt = _t21;
+        LyricSlice_lyric_string _t17 = lyric_slice_empty(LyricSlice_lyric_string);
+        TypeInfo _t18 = _lyric_slab_alloc_TypeInfo();
+        _lyric_slab_TypeInfo.type_val[_t18] = _t8;
+        _lyric_slab_TypeInfo.fields[_t18] = _t9;
+        _lyric_slab_TypeInfo.field_order[_t18] = _t10;
+        _lyric_slab_TypeInfo.methods[_t18] = _t11;
+        _lyric_slab_TypeInfo.variants[_t18] = _t12;
+        _lyric_slab_TypeInfo.type_param_names[_t18] = _t13;
+        _lyric_slab_TypeInfo.type_param_constraints[_t18] = _t14;
+        _lyric_slab_TypeInfo.implements_list[_t18] = _t15;
+        _lyric_slab_TypeInfo.sub_scope_labels[_t18] = _t16;
+        _lyric_slab_TypeInfo.family_params[_t18] = _t17;
+        TypeInfo info = _t18;
+        Registry _t19 = _lyric_slab_Checker.registry[self];
+        Registry_register(_t19, sname, info);
+        Registry _t21 = _lyric_slab_Checker.registry[self];
+        TypeInfo _t22 = Registry_lookup(_t21, sname);
+        info_opt = _t22;
     }
-    TypeInfo _t22 = lyric_unwrap_class(info_opt);
-    TypeInfo info = _t22;
-    LyricSlice_TypeParam _t23 = StructDecl___stp_children(s);
-    LyricSlice_TypeParam stparams = _t23;
+    TypeInfo _t23 = lyric_unwrap_class(info_opt);
+    TypeInfo info = _t23;
+    LyricSlice_TypeParam _t24 = StructDecl___stp_children(s);
+    LyricSlice_TypeParam stparams = _t24;
     for (int32_t _idx = 0; _idx < stparams.len; _idx++) {
         TypeParam tp = stparams.data[_idx];
-        Sym _t24 = _lyric_slab_TypeParam.name[tp];
-        bool _t25 = (_t24 != 0);
-        if (_t25) {
-            Sym _t26 = _lyric_slab_TypeParam.name[tp];
-            Sym _t27 = lyric_unwrap_class(_t26);
-            lyric_string _t28 = sym_to_string(_t27);
-            lyric_string tpname = _t28;
+        Sym _t25 = _lyric_slab_TypeParam.name[tp];
+        bool _t26 = (_t25 != 0);
+        if (_t26) {
+            Sym _t27 = _lyric_slab_TypeParam.name[tp];
+            Sym _t28 = lyric_unwrap_class(_t27);
+            lyric_string _t29 = sym_to_string(_t28);
+            lyric_string tpname = _t29;
             bool found = false;
-            LyricSlice_lyric_string _t29 = _lyric_slab_TypeInfo.type_param_names[info];
-            for (int32_t _idx = 0; _idx < _t29.len; _idx++) {
-                lyric_string existing_tp = _t29.data[_idx];
-                bool _t30 = lyric_str_eq(existing_tp, tpname);
-                if (_t30) {
+            LyricSlice_lyric_string _t30 = _lyric_slab_TypeInfo.type_param_names[info];
+            for (int32_t _idx = 0; _idx < _t30.len; _idx++) {
+                lyric_string existing_tp = _t30.data[_idx];
+                bool _t31 = lyric_str_eq(existing_tp, tpname);
+                if (_t31) {
                     found = true;
                 }
             }
-            bool _t31 = (!found);
-            if (_t31) {
-                LyricSlice_lyric_string _t32 = _lyric_slab_TypeInfo.type_param_names[info];
-                LyricSlice_lyric_string _t33 = ({ lyric_push(&_t32, tpname, LyricSlice_lyric_string); _t32; });
-                _lyric_slab_TypeInfo.type_param_names[info] = _t32;
-                _t33;
+            bool _t32 = (!found);
+            if (_t32) {
+                LyricSlice_lyric_string _t33 = _lyric_slab_TypeInfo.type_param_names[info];
+                LyricSlice_lyric_string _t34 = ({ lyric_push(&_t33, tpname, LyricSlice_lyric_string); _t33; });
+                _lyric_slab_TypeInfo.type_param_names[info] = _t33;
+                _t34;
             }
         }
     }
     Checker_push_scope(self);
     for (int32_t _idx = 0; _idx < stparams.len; _idx++) {
         TypeParam tp = stparams.data[_idx];
-        Sym _t35 = _lyric_slab_TypeParam.name[tp];
-        bool _t36 = (_t35 != 0);
-        if (_t36) {
-            Sym _t37 = _lyric_slab_TypeParam.name[tp];
-            Sym _t38 = lyric_unwrap_class(_t37);
-            lyric_string _t39 = sym_to_string(_t38);
-            lyric_string tpname = _t39;
-            Scope _t40 = _lyric_slab_Checker.scope[self];
-            Type _t41 = make_typevar_type(tpname);
-            Scope_define(_t40, tpname, _t41);
+        Sym _t36 = _lyric_slab_TypeParam.name[tp];
+        bool _t37 = (_t36 != 0);
+        if (_t37) {
+            Sym _t38 = _lyric_slab_TypeParam.name[tp];
+            Sym _t39 = lyric_unwrap_class(_t38);
+            lyric_string _t40 = sym_to_string(_t39);
+            lyric_string tpname = _t40;
+            Scope _t41 = _lyric_slab_Checker.scope[self];
+            Type _t42 = make_typevar_type(tpname);
+            Scope_define(_t41, tpname, _t42);
         }
     }
-    LyricSlice_Field _t43 = StructDecl___sf_children(s);
-    LyricSlice_Field sfields = _t43;
+    LyricSlice_Field _t44 = StructDecl___sf_children(s);
+    LyricSlice_Field sfields = _t44;
     for (int32_t _idx = 0; _idx < sfields.len; _idx++) {
         Field f = sfields.data[_idx];
-        Sym _t44 = _lyric_slab_Field.name[f];
-        bool _t45 = (_t44 != 0);
-        if (_t45) {
-            Sym _t46 = _lyric_slab_Field.name[f];
-            Sym _t47 = lyric_unwrap_class(_t46);
-            lyric_string _t48 = sym_to_string(_t47);
-            lyric_string fname = _t48;
-            Type _t49 = make_any_type();
-            Type ft = _t49;
-            TypeExpr _t50 = _lyric_slab_Field.type_expr[f];
-            bool _t51 = (_t50 != 0);
-            if (_t51) {
-                TypeExpr _t52 = _lyric_slab_Field.type_expr[f];
-                TypeExpr _t53 = lyric_unwrap_class(_t52);
-                Type _t54 = Checker_resolve_type_expr(self, _t53);
-                ft = _t54;
+        Sym _t45 = _lyric_slab_Field.name[f];
+        bool _t46 = (_t45 != 0);
+        if (_t46) {
+            Sym _t47 = _lyric_slab_Field.name[f];
+            Sym _t48 = lyric_unwrap_class(_t47);
+            lyric_string _t49 = sym_to_string(_t48);
+            lyric_string fname = _t49;
+            Type _t50 = make_any_type();
+            Type ft = _t50;
+            TypeExpr _t51 = _lyric_slab_Field.type_expr[f];
+            bool _t52 = (_t51 != 0);
+            if (_t52) {
+                TypeExpr _t53 = _lyric_slab_Field.type_expr[f];
+                TypeExpr _t54 = lyric_unwrap_class(_t53);
+                Type _t55 = Checker_resolve_type_expr(self, _t54);
+                ft = _t55;
             }
-            Dict_CSym_CType _t55 = _lyric_slab_TypeInfo.fields[info];
-            Sym _t56 = sym(fname);
-            Dict_CSym_CType_set(_t55, _t56, ft);
-            LyricSlice_lyric_string _t58 = _lyric_slab_TypeInfo.field_order[info];
-            LyricSlice_lyric_string _t59 = ({ lyric_push(&_t58, fname, LyricSlice_lyric_string); _t58; });
-            _lyric_slab_TypeInfo.field_order[info] = _t58;
-            _t59;
-            Expr _t60 = _lyric_slab_Field.default_value[f];
-            bool _t61 = (_t60 != 0);
-            if (_t61) {
-                Expr _t62 = _lyric_slab_Field.default_value[f];
-                Expr _t63 = lyric_unwrap_class(_t62);
-                Type _t64 = Checker_check_expr(self, _t63);
-                _t64;
+            Dict_CSym_CType _t56 = _lyric_slab_TypeInfo.fields[info];
+            Sym _t57 = sym(fname);
+            Dict_CSym_CType_set(_t56, _t57, ft);
+            LyricSlice_lyric_string _t59 = _lyric_slab_TypeInfo.field_order[info];
+            LyricSlice_lyric_string _t60 = ({ lyric_push(&_t59, fname, LyricSlice_lyric_string); _t59; });
+            _lyric_slab_TypeInfo.field_order[info] = _t59;
+            _t60;
+            Expr _t61 = _lyric_slab_Field.default_value[f];
+            bool _t62 = (_t61 != 0);
+            if (_t62) {
+                Expr _t63 = _lyric_slab_Field.default_value[f];
+                Expr _t64 = lyric_unwrap_class(_t63);
+                Type _t65 = Checker_check_expr(self, _t64);
+                _t65;
             }
         }
     }
@@ -41278,318 +41333,320 @@ void Checker_register_class(Checker self, ClassDecl cls) {
         LyricSlice_lyric_string _t14 = lyric_slice_empty(LyricSlice_lyric_string);
         LyricSlice_lyric_string _t15 = lyric_slice_empty(LyricSlice_lyric_string);
         Dict_CSym_bool _t16 = _lyric_slab_alloc_Dict_CSym_bool();
-        TypeInfo _t17 = _lyric_slab_alloc_TypeInfo();
-        _lyric_slab_TypeInfo.type_val[_t17] = _t8;
-        _lyric_slab_TypeInfo.fields[_t17] = _t9;
-        _lyric_slab_TypeInfo.field_order[_t17] = _t10;
-        _lyric_slab_TypeInfo.methods[_t17] = _t11;
-        _lyric_slab_TypeInfo.variants[_t17] = _t12;
-        _lyric_slab_TypeInfo.type_param_names[_t17] = _t13;
-        _lyric_slab_TypeInfo.type_param_constraints[_t17] = _t14;
-        _lyric_slab_TypeInfo.implements_list[_t17] = _t15;
-        _lyric_slab_TypeInfo.sub_scope_labels[_t17] = _t16;
-        TypeInfo info = _t17;
-        Registry _t18 = _lyric_slab_Checker.registry[self];
-        Registry_register(_t18, cname, info);
-        Registry _t20 = _lyric_slab_Checker.registry[self];
-        TypeInfo _t21 = Registry_lookup(_t20, cname);
-        info_opt = _t21;
+        LyricSlice_lyric_string _t17 = lyric_slice_empty(LyricSlice_lyric_string);
+        TypeInfo _t18 = _lyric_slab_alloc_TypeInfo();
+        _lyric_slab_TypeInfo.type_val[_t18] = _t8;
+        _lyric_slab_TypeInfo.fields[_t18] = _t9;
+        _lyric_slab_TypeInfo.field_order[_t18] = _t10;
+        _lyric_slab_TypeInfo.methods[_t18] = _t11;
+        _lyric_slab_TypeInfo.variants[_t18] = _t12;
+        _lyric_slab_TypeInfo.type_param_names[_t18] = _t13;
+        _lyric_slab_TypeInfo.type_param_constraints[_t18] = _t14;
+        _lyric_slab_TypeInfo.implements_list[_t18] = _t15;
+        _lyric_slab_TypeInfo.sub_scope_labels[_t18] = _t16;
+        _lyric_slab_TypeInfo.family_params[_t18] = _t17;
+        TypeInfo info = _t18;
+        Registry _t19 = _lyric_slab_Checker.registry[self];
+        Registry_register(_t19, cname, info);
+        Registry _t21 = _lyric_slab_Checker.registry[self];
+        TypeInfo _t22 = Registry_lookup(_t21, cname);
+        info_opt = _t22;
     }
-    TypeInfo _t22 = lyric_unwrap_class(info_opt);
-    TypeInfo info = _t22;
-    LyricSlice_TypeParam _t23 = ClassDecl___ctp_children(cls);
-    LyricSlice_TypeParam ctparams = _t23;
-    LyricSlice_Type _t24 = lyric_slice_empty(LyricSlice_Type);
-    LyricSlice_Type type_var_args = _t24;
+    TypeInfo _t23 = lyric_unwrap_class(info_opt);
+    TypeInfo info = _t23;
+    LyricSlice_TypeParam _t24 = ClassDecl___ctp_children(cls);
+    LyricSlice_TypeParam ctparams = _t24;
+    LyricSlice_Type _t25 = lyric_slice_empty(LyricSlice_Type);
+    LyricSlice_Type type_var_args = _t25;
     for (int32_t _idx = 0; _idx < ctparams.len; _idx++) {
         TypeParam tp = ctparams.data[_idx];
-        Sym _t25 = _lyric_slab_TypeParam.name[tp];
-        bool _t26 = (_t25 != 0);
-        if (_t26) {
-            Sym _t27 = _lyric_slab_TypeParam.name[tp];
-            Sym _t28 = lyric_unwrap_class(_t27);
-            lyric_string _t29 = sym_to_string(_t28);
-            lyric_string tpname = _t29;
-            LyricSlice_lyric_string _t30 = _lyric_slab_TypeInfo.type_param_names[info];
-            LyricSlice_lyric_string _t31 = ({ lyric_push(&_t30, tpname, LyricSlice_lyric_string); _t30; });
-            _lyric_slab_TypeInfo.type_param_names[info] = _t30;
-            _t31;
-            Type _t32 = make_typevar_type(tpname);
-            LyricSlice_Type _t33 = ({ lyric_push(&type_var_args, _t32, LyricSlice_Type); type_var_args; });
-            _t33;
+        Sym _t26 = _lyric_slab_TypeParam.name[tp];
+        bool _t27 = (_t26 != 0);
+        if (_t27) {
+            Sym _t28 = _lyric_slab_TypeParam.name[tp];
+            Sym _t29 = lyric_unwrap_class(_t28);
+            lyric_string _t30 = sym_to_string(_t29);
+            lyric_string tpname = _t30;
+            LyricSlice_lyric_string _t31 = _lyric_slab_TypeInfo.type_param_names[info];
+            LyricSlice_lyric_string _t32 = ({ lyric_push(&_t31, tpname, LyricSlice_lyric_string); _t31; });
+            _lyric_slab_TypeInfo.type_param_names[info] = _t31;
+            _t32;
+            Type _t33 = make_typevar_type(tpname);
+            LyricSlice_Type _t34 = ({ lyric_push(&type_var_args, _t33, LyricSlice_Type); type_var_args; });
+            _t34;
         }
     }
-    Type __ifexpr_34 = 0;
-    int32_t _t35 = type_var_args.len;
-    bool _t36 = (_t35 > 0);
-    if (_t36) {
-        TypeKind _t37 = (TypeKind){.tag = TypeKind_Class, .data.class = {cname}};
-        Type _t38 = _lyric_slab_alloc_Type();
-        _lyric_slab_Type.kind[_t38] = _t37;
-        _lyric_slab_Type.bits[_t38] = 0;
-        _lyric_slab_Type.type_args[_t38] = type_var_args;
-        __ifexpr_34 = _t38;
+    Type __ifexpr_35 = 0;
+    int32_t _t36 = type_var_args.len;
+    bool _t37 = (_t36 > 0);
+    if (_t37) {
+        TypeKind _t38 = (TypeKind){.tag = TypeKind_Class, .data.class = {cname}};
+        Type _t39 = _lyric_slab_alloc_Type();
+        _lyric_slab_Type.kind[_t39] = _t38;
+        _lyric_slab_Type.bits[_t39] = 0;
+        _lyric_slab_Type.type_args[_t39] = type_var_args;
+        __ifexpr_35 = _t39;
     } else {
-        Type _t39 = _lyric_slab_TypeInfo.type_val[info];
-        __ifexpr_34 = _t39;
+        Type _t40 = _lyric_slab_TypeInfo.type_val[info];
+        __ifexpr_35 = _t40;
     }
-    Type ctor_return = __ifexpr_34;
+    Type ctor_return = __ifexpr_35;
     Checker_push_scope(self);
     for (int32_t _idx = 0; _idx < ctparams.len; _idx++) {
         TypeParam tp = ctparams.data[_idx];
-        Sym _t41 = _lyric_slab_TypeParam.name[tp];
-        bool _t42 = (_t41 != 0);
-        if (_t42) {
-            Sym _t43 = _lyric_slab_TypeParam.name[tp];
-            Sym _t44 = lyric_unwrap_class(_t43);
-            lyric_string _t45 = sym_to_string(_t44);
-            lyric_string tpname = _t45;
-            Scope _t46 = _lyric_slab_Checker.scope[self];
-            Type _t47 = make_typevar_type(tpname);
-            Scope_define(_t46, tpname, _t47);
+        Sym _t42 = _lyric_slab_TypeParam.name[tp];
+        bool _t43 = (_t42 != 0);
+        if (_t43) {
+            Sym _t44 = _lyric_slab_TypeParam.name[tp];
+            Sym _t45 = lyric_unwrap_class(_t44);
+            lyric_string _t46 = sym_to_string(_t45);
+            lyric_string tpname = _t46;
+            Scope _t47 = _lyric_slab_Checker.scope[self];
+            Type _t48 = make_typevar_type(tpname);
+            Scope_define(_t47, tpname, _t48);
         }
     }
-    LyricSlice_Field _t49 = ClassDecl___cf_children(cls);
-    LyricSlice_Field cfields = _t49;
+    LyricSlice_Field _t50 = ClassDecl___cf_children(cls);
+    LyricSlice_Field cfields = _t50;
     for (int32_t _idx = 0; _idx < cfields.len; _idx++) {
         Field f = cfields.data[_idx];
-        Sym _t50 = _lyric_slab_Field.name[f];
-        bool _t51 = (_t50 != 0);
-        if (_t51) {
-            Sym _t52 = _lyric_slab_Field.name[f];
-            Sym _t53 = lyric_unwrap_class(_t52);
-            lyric_string _t54 = sym_to_string(_t53);
-            lyric_string fname = _t54;
-            Type _t55 = make_any_type();
-            Type ft = _t55;
-            TypeExpr _t56 = _lyric_slab_Field.type_expr[f];
-            bool _t57 = (_t56 != 0);
-            if (_t57) {
-                TypeExpr _t58 = _lyric_slab_Field.type_expr[f];
-                TypeExpr _t59 = lyric_unwrap_class(_t58);
-                Type _t60 = Checker_resolve_type_expr(self, _t59);
-                ft = _t60;
+        Sym _t51 = _lyric_slab_Field.name[f];
+        bool _t52 = (_t51 != 0);
+        if (_t52) {
+            Sym _t53 = _lyric_slab_Field.name[f];
+            Sym _t54 = lyric_unwrap_class(_t53);
+            lyric_string _t55 = sym_to_string(_t54);
+            lyric_string fname = _t55;
+            Type _t56 = make_any_type();
+            Type ft = _t56;
+            TypeExpr _t57 = _lyric_slab_Field.type_expr[f];
+            bool _t58 = (_t57 != 0);
+            if (_t58) {
+                TypeExpr _t59 = _lyric_slab_Field.type_expr[f];
+                TypeExpr _t60 = lyric_unwrap_class(_t59);
+                Type _t61 = Checker_resolve_type_expr(self, _t60);
+                ft = _t61;
             }
-            Dict_CSym_CType _t61 = _lyric_slab_TypeInfo.fields[info];
-            Sym _t62 = sym(fname);
-            Dict_CSym_CType_set(_t61, _t62, ft);
-            LyricSlice_lyric_string _t64 = _lyric_slab_TypeInfo.field_order[info];
-            LyricSlice_lyric_string _t65 = ({ lyric_push(&_t64, fname, LyricSlice_lyric_string); _t64; });
-            _lyric_slab_TypeInfo.field_order[info] = _t64;
-            _t65;
-            Expr _t66 = _lyric_slab_Field.default_value[f];
-            bool _t67 = (_t66 != 0);
-            if (_t67) {
-                Expr _t68 = _lyric_slab_Field.default_value[f];
-                Expr _t69 = lyric_unwrap_class(_t68);
-                Type _t70 = Checker_check_expr(self, _t69);
-                _t70;
+            Dict_CSym_CType _t62 = _lyric_slab_TypeInfo.fields[info];
+            Sym _t63 = sym(fname);
+            Dict_CSym_CType_set(_t62, _t63, ft);
+            LyricSlice_lyric_string _t65 = _lyric_slab_TypeInfo.field_order[info];
+            LyricSlice_lyric_string _t66 = ({ lyric_push(&_t65, fname, LyricSlice_lyric_string); _t65; });
+            _lyric_slab_TypeInfo.field_order[info] = _t65;
+            _t66;
+            Expr _t67 = _lyric_slab_Field.default_value[f];
+            bool _t68 = (_t67 != 0);
+            if (_t68) {
+                Expr _t69 = _lyric_slab_Field.default_value[f];
+                Expr _t70 = lyric_unwrap_class(_t69);
+                Type _t71 = Checker_check_expr(self, _t70);
+                _t71;
             }
         }
     }
-    LyricSlice_FuncDecl _t71 = ClassDecl___cm_children(cls);
-    LyricSlice_FuncDecl cmethods = _t71;
+    LyricSlice_FuncDecl _t72 = ClassDecl___cm_children(cls);
+    LyricSlice_FuncDecl cmethods = _t72;
     for (int32_t _idx = 0; _idx < cmethods.len; _idx++) {
         FuncDecl m = cmethods.data[_idx];
-        Sym _t72 = _lyric_slab_FuncDecl.name[m];
-        bool _t73 = (_t72 != 0);
-        if (_t73) {
-            Type _t74 = Checker_func_decl_to_type(self, m);
-            Type ft = _t74;
-            Dict_CSym_CType _t75 = _lyric_slab_TypeInfo.methods[info];
-            Sym _t76 = _lyric_slab_FuncDecl.name[m];
-            Sym _t77 = lyric_unwrap_class(_t76);
-            lyric_string _t78 = sym_to_string(_t77);
-            Sym _t79 = sym(_t78);
-            Dict_CSym_CType_set(_t75, _t79, ft);
+        Sym _t73 = _lyric_slab_FuncDecl.name[m];
+        bool _t74 = (_t73 != 0);
+        if (_t74) {
+            Type _t75 = Checker_func_decl_to_type(self, m);
+            Type ft = _t75;
+            Dict_CSym_CType _t76 = _lyric_slab_TypeInfo.methods[info];
+            Sym _t77 = _lyric_slab_FuncDecl.name[m];
+            Sym _t78 = lyric_unwrap_class(_t77);
+            lyric_string _t79 = sym_to_string(_t78);
+            Sym _t80 = sym(_t79);
+            Dict_CSym_CType_set(_t76, _t80, ft);
         }
     }
     for (int32_t _idx = 0; _idx < cfields.len; _idx++) {
         Field f = cfields.data[_idx];
-        Sym _t81 = _lyric_slab_Field.name[f];
-        bool _t82 = (_t81 != 0);
-        if (_t82) {
-            Sym _t83 = _lyric_slab_Field.name[f];
-            Sym _t84 = lyric_unwrap_class(_t83);
-            lyric_string _t85 = sym_to_string(_t84);
-            lyric_string fname = _t85;
+        Sym _t82 = _lyric_slab_Field.name[f];
+        bool _t83 = (_t82 != 0);
+        if (_t83) {
+            Sym _t84 = _lyric_slab_Field.name[f];
+            Sym _t85 = lyric_unwrap_class(_t84);
+            lyric_string _t86 = sym_to_string(_t85);
+            lyric_string fname = _t86;
             for (int32_t _idx = 0; _idx < cmethods.len; _idx++) {
                 FuncDecl m = cmethods.data[_idx];
-                Sym _t86 = _lyric_slab_FuncDecl.name[m];
-                bool _t87 = (_t86 != 0);
-                bool _sc88 = false;
-                _sc88 = _t87;
-                if (_sc88) {
-                    Sym _t89 = _lyric_slab_FuncDecl.name[m];
-                    Sym _t90 = lyric_unwrap_class(_t89);
-                    lyric_string _t91 = sym_to_string(_t90);
-                    bool _t92 = lyric_str_eq(_t91, fname);
-                    _sc88 = _t92;
+                Sym _t87 = _lyric_slab_FuncDecl.name[m];
+                bool _t88 = (_t87 != 0);
+                bool _sc89 = false;
+                _sc89 = _t88;
+                if (_sc89) {
+                    Sym _t90 = _lyric_slab_FuncDecl.name[m];
+                    Sym _t91 = lyric_unwrap_class(_t90);
+                    lyric_string _t92 = sym_to_string(_t91);
+                    bool _t93 = lyric_str_eq(_t92, fname);
+                    _sc89 = _t93;
                 }
-                if (_sc88) {
-                    lyric_string _t93 = lyric_sprintf("checker: class %.*s declares both field '%.*s' and method '%.*s'; field and zero-arg method names share a namespace under UFCS \xe2\x80\x94 rename one", (int)cname.len, (const char*)cname.data, (int)fname.len, (const char*)fname.data, (int)fname.len, (const char*)fname.data);
-                    fprintf(stderr, "%.*s\n", (int)_t93.len, (const char*)_t93.data);
+                if (_sc89) {
+                    lyric_string _t94 = lyric_sprintf("checker: class %.*s declares both field '%.*s' and method '%.*s'; field and zero-arg method names share a namespace under UFCS \xe2\x80\x94 rename one", (int)cname.len, (const char*)cname.data, (int)fname.len, (const char*)fname.data, (int)fname.len, (const char*)fname.data);
+                    fprintf(stderr, "%.*s\n", (int)_t94.len, (const char*)_t94.data);
                     exit(1);
                 }
             }
         }
     }
-    LyricSlice_SubScope _t96 = ClassDecl___css_children(cls);
-    for (int32_t _idx = 0; _idx < _t96.len; _idx++) {
-        SubScope scope = _t96.data[_idx];
-        Sym _t97 = _lyric_slab_SubScope.label[scope];
-        bool _t98 = (_t97 == 0);
-        if (_t98) {
+    LyricSlice_SubScope _t97 = ClassDecl___css_children(cls);
+    for (int32_t _idx = 0; _idx < _t97.len; _idx++) {
+        SubScope scope = _t97.data[_idx];
+        Sym _t98 = _lyric_slab_SubScope.label[scope];
+        bool _t99 = (_t98 == 0);
+        if (_t99) {
             continue;
         }
-        Sym _t99 = _lyric_slab_SubScope.label[scope];
-        Sym _t100 = lyric_unwrap_class(_t99);
-        lyric_string _t101 = sym_to_string(_t100);
-        lyric_string label_name = _t101;
-        Dict_CSym_bool _t102 = _lyric_slab_TypeInfo.sub_scope_labels[info];
-        Sym _t103 = _lyric_slab_SubScope.label[scope];
-        Sym _t104 = lyric_unwrap_class(_t103);
-        Dict_CSym_bool_set(_t102, _t104, true);
-        lyric_string __ifexpr_106 = LYRIC_STR_EMPTY;
-        Sym _t107 = _lyric_slab_SubScope.hint_iface[scope];
-        bool _t108 = (_t107 != 0);
-        if (_t108) {
-            Sym _t109 = _lyric_slab_SubScope.hint_iface[scope];
-            Sym _t110 = lyric_unwrap_class(_t109);
-            lyric_string _t111 = sym_to_string(_t110);
-            __ifexpr_106 = _t111;
+        Sym _t100 = _lyric_slab_SubScope.label[scope];
+        Sym _t101 = lyric_unwrap_class(_t100);
+        lyric_string _t102 = sym_to_string(_t101);
+        lyric_string label_name = _t102;
+        Dict_CSym_bool _t103 = _lyric_slab_TypeInfo.sub_scope_labels[info];
+        Sym _t104 = _lyric_slab_SubScope.label[scope];
+        Sym _t105 = lyric_unwrap_class(_t104);
+        Dict_CSym_bool_set(_t103, _t105, true);
+        lyric_string __ifexpr_107 = LYRIC_STR_EMPTY;
+        Sym _t108 = _lyric_slab_SubScope.hint_iface[scope];
+        bool _t109 = (_t108 != 0);
+        if (_t109) {
+            Sym _t110 = _lyric_slab_SubScope.hint_iface[scope];
+            Sym _t111 = lyric_unwrap_class(_t110);
+            lyric_string _t112 = sym_to_string(_t111);
+            __ifexpr_107 = _t112;
         } else {
-            __ifexpr_106 = LYRIC_STR("<unknown hint>");
+            __ifexpr_107 = LYRIC_STR("<unknown hint>");
         }
-        lyric_string hint_name = __ifexpr_106;
-        lyric_string __ifexpr_112 = LYRIC_STR_EMPTY;
-        int32_t _t113 = _lyric_slab_SubScope.side_index[scope];
-        bool _t114 = (_t113 == 0);
-        if (_t114) {
-            __ifexpr_112 = LYRIC_STR("parent");
+        lyric_string hint_name = __ifexpr_107;
+        lyric_string __ifexpr_113 = LYRIC_STR_EMPTY;
+        int32_t _t114 = _lyric_slab_SubScope.side_index[scope];
+        bool _t115 = (_t114 == 0);
+        if (_t115) {
+            __ifexpr_113 = LYRIC_STR("parent");
         } else {
-            __ifexpr_112 = LYRIC_STR("child");
+            __ifexpr_113 = LYRIC_STR("child");
         }
-        lyric_string side_str = __ifexpr_112;
+        lyric_string side_str = __ifexpr_113;
         for (int32_t _idx = 0; _idx < cfields.len; _idx++) {
             Field f = cfields.data[_idx];
-            Sym _t115 = _lyric_slab_Field.name[f];
-            bool _t116 = (_t115 != 0);
-            bool _sc117 = false;
-            _sc117 = _t116;
-            if (_sc117) {
-                Sym _t118 = _lyric_slab_Field.name[f];
-                Sym _t119 = lyric_unwrap_class(_t118);
-                lyric_string _t120 = sym_to_string(_t119);
-                bool _t121 = lyric_str_eq(_t120, label_name);
-                _sc117 = _t121;
+            Sym _t116 = _lyric_slab_Field.name[f];
+            bool _t117 = (_t116 != 0);
+            bool _sc118 = false;
+            _sc118 = _t117;
+            if (_sc118) {
+                Sym _t119 = _lyric_slab_Field.name[f];
+                Sym _t120 = lyric_unwrap_class(_t119);
+                lyric_string _t121 = sym_to_string(_t120);
+                bool _t122 = lyric_str_eq(_t121, label_name);
+                _sc118 = _t122;
             }
-            if (_sc117) {
-                lyric_string _t122 = lyric_sprintf("checker: class %.*s field '%.*s' collides with relation label '%.*s:%.*s' from `%.*s` (%.*s-side) \xe2\x80\x94 rename the field or the relation label", (int)cname.len, (const char*)cname.data, (int)label_name.len, (const char*)label_name.data, (int)cname.len, (const char*)cname.data, (int)label_name.len, (const char*)label_name.data, (int)hint_name.len, (const char*)hint_name.data, (int)side_str.len, (const char*)side_str.data);
-                fprintf(stderr, "%.*s\n", (int)_t122.len, (const char*)_t122.data);
+            if (_sc118) {
+                lyric_string _t123 = lyric_sprintf("checker: class %.*s field '%.*s' collides with relation label '%.*s:%.*s' from `%.*s` (%.*s-side) \xe2\x80\x94 rename the field or the relation label", (int)cname.len, (const char*)cname.data, (int)label_name.len, (const char*)label_name.data, (int)cname.len, (const char*)cname.data, (int)label_name.len, (const char*)label_name.data, (int)hint_name.len, (const char*)hint_name.data, (int)side_str.len, (const char*)side_str.data);
+                fprintf(stderr, "%.*s\n", (int)_t123.len, (const char*)_t123.data);
                 exit(1);
             }
         }
         for (int32_t _idx = 0; _idx < cmethods.len; _idx++) {
             FuncDecl m = cmethods.data[_idx];
-            Sym _t125 = _lyric_slab_FuncDecl.name[m];
-            bool _t126 = (_t125 != 0);
-            bool _sc127 = false;
-            _sc127 = _t126;
-            if (_sc127) {
-                Sym _t128 = _lyric_slab_FuncDecl.name[m];
-                Sym _t129 = lyric_unwrap_class(_t128);
-                lyric_string _t130 = sym_to_string(_t129);
-                bool _t131 = lyric_str_eq(_t130, label_name);
-                _sc127 = _t131;
+            Sym _t126 = _lyric_slab_FuncDecl.name[m];
+            bool _t127 = (_t126 != 0);
+            bool _sc128 = false;
+            _sc128 = _t127;
+            if (_sc128) {
+                Sym _t129 = _lyric_slab_FuncDecl.name[m];
+                Sym _t130 = lyric_unwrap_class(_t129);
+                lyric_string _t131 = sym_to_string(_t130);
+                bool _t132 = lyric_str_eq(_t131, label_name);
+                _sc128 = _t132;
             }
-            if (_sc127) {
-                lyric_string _t132 = lyric_sprintf("checker: class %.*s method '%.*s' collides with relation label '%.*s:%.*s' from `%.*s` (%.*s-side) \xe2\x80\x94 rename the method or the relation label so `self.%.*s.<member>` can resolve through the relation's sub-scope", (int)cname.len, (const char*)cname.data, (int)label_name.len, (const char*)label_name.data, (int)cname.len, (const char*)cname.data, (int)label_name.len, (const char*)label_name.data, (int)hint_name.len, (const char*)hint_name.data, (int)side_str.len, (const char*)side_str.data, (int)label_name.len, (const char*)label_name.data);
-                fprintf(stderr, "%.*s\n", (int)_t132.len, (const char*)_t132.data);
+            if (_sc128) {
+                lyric_string _t133 = lyric_sprintf("checker: class %.*s method '%.*s' collides with relation label '%.*s:%.*s' from `%.*s` (%.*s-side) \xe2\x80\x94 rename the method or the relation label so `self.%.*s.<member>` can resolve through the relation's sub-scope", (int)cname.len, (const char*)cname.data, (int)label_name.len, (const char*)label_name.data, (int)cname.len, (const char*)cname.data, (int)label_name.len, (const char*)label_name.data, (int)hint_name.len, (const char*)hint_name.data, (int)side_str.len, (const char*)side_str.data, (int)label_name.len, (const char*)label_name.data);
+                fprintf(stderr, "%.*s\n", (int)_t133.len, (const char*)_t133.data);
                 exit(1);
             }
         }
     }
     Checker_pop_scope(self);
-    LyricSlice_Type _t136 = lyric_slice_empty(LyricSlice_Type);
-    LyricSlice_Type ctor_params = _t136;
+    LyricSlice_Type _t137 = lyric_slice_empty(LyricSlice_Type);
+    LyricSlice_Type ctor_params = _t137;
     bool has_explicit_ctor = false;
     for (int32_t _idx = 0; _idx < cmethods.len; _idx++) {
         FuncDecl m = cmethods.data[_idx];
-        Sym _t137 = _lyric_slab_FuncDecl.name[m];
-        bool _t138 = (_t137 != 0);
-        bool _sc139 = false;
-        _sc139 = _t138;
-        if (_sc139) {
-            Sym _t140 = _lyric_slab_FuncDecl.name[m];
-            Sym _t141 = lyric_unwrap_class(_t140);
-            lyric_string _t142 = sym_to_string(_t141);
-            bool _t143 = lyric_str_eq(_t142, cname);
-            _sc139 = _t143;
+        Sym _t138 = _lyric_slab_FuncDecl.name[m];
+        bool _t139 = (_t138 != 0);
+        bool _sc140 = false;
+        _sc140 = _t139;
+        if (_sc140) {
+            Sym _t141 = _lyric_slab_FuncDecl.name[m];
+            Sym _t142 = lyric_unwrap_class(_t141);
+            lyric_string _t143 = sym_to_string(_t142);
+            bool _t144 = lyric_str_eq(_t143, cname);
+            _sc140 = _t144;
         }
-        if (_sc139) {
+        if (_sc140) {
             has_explicit_ctor = true;
-            LyricSlice_Param _t144 = FuncDecl___param_children(m);
-            LyricSlice_Param cparams = _t144;
+            LyricSlice_Param _t145 = FuncDecl___param_children(m);
+            LyricSlice_Param cparams = _t145;
             for (int32_t _idx = 0; _idx < cparams.len; _idx++) {
                 Param p = cparams.data[_idx];
-                bool _t145 = _lyric_slab_Param.is_self[p];
-                bool _t146 = (!_t145);
-                if (_t146) {
-                    TypeExpr _t147 = _lyric_slab_Param.type_expr[p];
-                    bool _t148 = (_t147 != 0);
-                    if (_t148) {
-                        TypeExpr _t149 = _lyric_slab_Param.type_expr[p];
-                        TypeExpr _t150 = lyric_unwrap_class(_t149);
-                        Type _t151 = Checker_resolve_type_expr(self, _t150);
-                        LyricSlice_Type _t152 = ({ lyric_push(&ctor_params, _t151, LyricSlice_Type); ctor_params; });
-                        _t152;
+                bool _t146 = _lyric_slab_Param.is_self[p];
+                bool _t147 = (!_t146);
+                if (_t147) {
+                    TypeExpr _t148 = _lyric_slab_Param.type_expr[p];
+                    bool _t149 = (_t148 != 0);
+                    if (_t149) {
+                        TypeExpr _t150 = _lyric_slab_Param.type_expr[p];
+                        TypeExpr _t151 = lyric_unwrap_class(_t150);
+                        Type _t152 = Checker_resolve_type_expr(self, _t151);
+                        LyricSlice_Type _t153 = ({ lyric_push(&ctor_params, _t152, LyricSlice_Type); ctor_params; });
+                        _t153;
                     } else {
-                        Type _t153 = make_any_type();
-                        LyricSlice_Type _t154 = ({ lyric_push(&ctor_params, _t153, LyricSlice_Type); ctor_params; });
-                        _t154;
+                        Type _t154 = make_any_type();
+                        LyricSlice_Type _t155 = ({ lyric_push(&ctor_params, _t154, LyricSlice_Type); ctor_params; });
+                        _t155;
                     }
                 }
             }
         }
     }
-    LyricSlice_lyric_string _t155 = lyric_slice_empty(LyricSlice_lyric_string);
-    LyricSlice_lyric_string tpnames = _t155;
     LyricSlice_lyric_string _t156 = lyric_slice_empty(LyricSlice_lyric_string);
-    LyricSlice_lyric_string tpconstraints = _t156;
+    LyricSlice_lyric_string tpnames = _t156;
+    LyricSlice_lyric_string _t157 = lyric_slice_empty(LyricSlice_lyric_string);
+    LyricSlice_lyric_string tpconstraints = _t157;
     for (int32_t _idx = 0; _idx < ctparams.len; _idx++) {
         TypeParam tp = ctparams.data[_idx];
-        Sym _t157 = _lyric_slab_TypeParam.name[tp];
-        bool _t158 = (_t157 != 0);
-        if (_t158) {
-            Sym _t159 = _lyric_slab_TypeParam.name[tp];
-            Sym _t160 = lyric_unwrap_class(_t159);
-            lyric_string _t161 = sym_to_string(_t160);
-            LyricSlice_lyric_string _t162 = ({ lyric_push(&tpnames, _t161, LyricSlice_lyric_string); tpnames; });
-            _t162;
-            Sym _t163 = _lyric_slab_TypeParam.constraint[tp];
-            bool _t164 = (_t163 != 0);
-            if (_t164) {
-                Sym _t165 = _lyric_slab_TypeParam.constraint[tp];
-                Sym _t166 = lyric_unwrap_class(_t165);
-                lyric_string _t167 = sym_to_string(_t166);
-                LyricSlice_lyric_string _t168 = ({ lyric_push(&tpconstraints, _t167, LyricSlice_lyric_string); tpconstraints; });
-                _t168;
-            } else {
-                LyricSlice_lyric_string _t169 = ({ lyric_push(&tpconstraints, LYRIC_STR(""), LyricSlice_lyric_string); tpconstraints; });
+        Sym _t158 = _lyric_slab_TypeParam.name[tp];
+        bool _t159 = (_t158 != 0);
+        if (_t159) {
+            Sym _t160 = _lyric_slab_TypeParam.name[tp];
+            Sym _t161 = lyric_unwrap_class(_t160);
+            lyric_string _t162 = sym_to_string(_t161);
+            LyricSlice_lyric_string _t163 = ({ lyric_push(&tpnames, _t162, LyricSlice_lyric_string); tpnames; });
+            _t163;
+            Sym _t164 = _lyric_slab_TypeParam.constraint[tp];
+            bool _t165 = (_t164 != 0);
+            if (_t165) {
+                Sym _t166 = _lyric_slab_TypeParam.constraint[tp];
+                Sym _t167 = lyric_unwrap_class(_t166);
+                lyric_string _t168 = sym_to_string(_t167);
+                LyricSlice_lyric_string _t169 = ({ lyric_push(&tpconstraints, _t168, LyricSlice_lyric_string); tpconstraints; });
                 _t169;
+            } else {
+                LyricSlice_lyric_string _t170 = ({ lyric_push(&tpconstraints, LYRIC_STR(""), LyricSlice_lyric_string); tpconstraints; });
+                _t170;
             }
         }
     }
     if (has_explicit_ctor) {
-        Scope _t170 = _lyric_slab_Checker.scope[self];
-        Type _t171 = make_func_type(ctor_params, ctor_return, tpnames);
-        Scope_define(_t170, cname, _t171);
+        Scope _t171 = _lyric_slab_Checker.scope[self];
+        Type _t172 = make_func_type(ctor_params, ctor_return, tpnames);
+        Scope_define(_t171, cname, _t172);
     } else {
-        Scope _t173 = _lyric_slab_Checker.scope[self];
-        LyricSlice_Type _t174 = lyric_slice_empty(LyricSlice_Type);
-        Type _t175 = make_func_type(_t174, ctor_return, tpnames);
-        Scope_define(_t173, cname, _t175);
+        Scope _t174 = _lyric_slab_Checker.scope[self];
+        LyricSlice_Type _t175 = lyric_slice_empty(LyricSlice_Type);
+        Type _t176 = make_func_type(_t175, ctor_return, tpnames);
+        Scope_define(_t174, cname, _t176);
     }
     if (tpconstraints.cap > 0 && tpconstraints.data) free(tpconstraints.data);
 }
@@ -41619,118 +41676,120 @@ void Checker_register_enum(Checker self, EnumDecl e) {
         LyricSlice_lyric_string _t14 = lyric_slice_empty(LyricSlice_lyric_string);
         LyricSlice_lyric_string _t15 = lyric_slice_empty(LyricSlice_lyric_string);
         Dict_CSym_bool _t16 = _lyric_slab_alloc_Dict_CSym_bool();
-        TypeInfo _t17 = _lyric_slab_alloc_TypeInfo();
-        _lyric_slab_TypeInfo.type_val[_t17] = enum_type;
-        _lyric_slab_TypeInfo.fields[_t17] = _t9;
-        _lyric_slab_TypeInfo.field_order[_t17] = _t10;
-        _lyric_slab_TypeInfo.methods[_t17] = _t11;
-        _lyric_slab_TypeInfo.variants[_t17] = _t12;
-        _lyric_slab_TypeInfo.type_param_names[_t17] = _t13;
-        _lyric_slab_TypeInfo.type_param_constraints[_t17] = _t14;
-        _lyric_slab_TypeInfo.implements_list[_t17] = _t15;
-        _lyric_slab_TypeInfo.sub_scope_labels[_t17] = _t16;
-        TypeInfo info = _t17;
-        Registry _t18 = _lyric_slab_Checker.registry[self];
-        Registry_register(_t18, ename, info);
-        Registry _t20 = _lyric_slab_Checker.registry[self];
-        TypeInfo _t21 = Registry_lookup(_t20, ename);
-        info_opt = _t21;
+        LyricSlice_lyric_string _t17 = lyric_slice_empty(LyricSlice_lyric_string);
+        TypeInfo _t18 = _lyric_slab_alloc_TypeInfo();
+        _lyric_slab_TypeInfo.type_val[_t18] = enum_type;
+        _lyric_slab_TypeInfo.fields[_t18] = _t9;
+        _lyric_slab_TypeInfo.field_order[_t18] = _t10;
+        _lyric_slab_TypeInfo.methods[_t18] = _t11;
+        _lyric_slab_TypeInfo.variants[_t18] = _t12;
+        _lyric_slab_TypeInfo.type_param_names[_t18] = _t13;
+        _lyric_slab_TypeInfo.type_param_constraints[_t18] = _t14;
+        _lyric_slab_TypeInfo.implements_list[_t18] = _t15;
+        _lyric_slab_TypeInfo.sub_scope_labels[_t18] = _t16;
+        _lyric_slab_TypeInfo.family_params[_t18] = _t17;
+        TypeInfo info = _t18;
+        Registry _t19 = _lyric_slab_Checker.registry[self];
+        Registry_register(_t19, ename, info);
+        Registry _t21 = _lyric_slab_Checker.registry[self];
+        TypeInfo _t22 = Registry_lookup(_t21, ename);
+        info_opt = _t22;
     }
-    TypeInfo _t22 = lyric_unwrap_class(info_opt);
-    TypeInfo info = _t22;
-    LyricSlice_TypeParam _t23 = EnumDecl___etp_children(e);
-    LyricSlice_TypeParam etparams = _t23;
+    TypeInfo _t23 = lyric_unwrap_class(info_opt);
+    TypeInfo info = _t23;
+    LyricSlice_TypeParam _t24 = EnumDecl___etp_children(e);
+    LyricSlice_TypeParam etparams = _t24;
     for (int32_t _idx = 0; _idx < etparams.len; _idx++) {
         TypeParam tp = etparams.data[_idx];
-        Sym _t24 = _lyric_slab_TypeParam.name[tp];
-        bool _t25 = (_t24 != 0);
-        if (_t25) {
-            Sym _t26 = _lyric_slab_TypeParam.name[tp];
-            Sym _t27 = lyric_unwrap_class(_t26);
-            lyric_string _t28 = sym_to_string(_t27);
-            lyric_string tpname = _t28;
+        Sym _t25 = _lyric_slab_TypeParam.name[tp];
+        bool _t26 = (_t25 != 0);
+        if (_t26) {
+            Sym _t27 = _lyric_slab_TypeParam.name[tp];
+            Sym _t28 = lyric_unwrap_class(_t27);
+            lyric_string _t29 = sym_to_string(_t28);
+            lyric_string tpname = _t29;
             bool found = false;
-            LyricSlice_lyric_string _t29 = _lyric_slab_TypeInfo.type_param_names[info];
-            for (int32_t _idx = 0; _idx < _t29.len; _idx++) {
-                lyric_string existing_tp = _t29.data[_idx];
-                bool _t30 = lyric_str_eq(existing_tp, tpname);
-                if (_t30) {
+            LyricSlice_lyric_string _t30 = _lyric_slab_TypeInfo.type_param_names[info];
+            for (int32_t _idx = 0; _idx < _t30.len; _idx++) {
+                lyric_string existing_tp = _t30.data[_idx];
+                bool _t31 = lyric_str_eq(existing_tp, tpname);
+                if (_t31) {
                     found = true;
                 }
             }
-            bool _t31 = (!found);
-            if (_t31) {
-                LyricSlice_lyric_string _t32 = _lyric_slab_TypeInfo.type_param_names[info];
-                LyricSlice_lyric_string _t33 = ({ lyric_push(&_t32, tpname, LyricSlice_lyric_string); _t32; });
-                _lyric_slab_TypeInfo.type_param_names[info] = _t32;
-                _t33;
+            bool _t32 = (!found);
+            if (_t32) {
+                LyricSlice_lyric_string _t33 = _lyric_slab_TypeInfo.type_param_names[info];
+                LyricSlice_lyric_string _t34 = ({ lyric_push(&_t33, tpname, LyricSlice_lyric_string); _t33; });
+                _lyric_slab_TypeInfo.type_param_names[info] = _t33;
+                _t34;
             }
         }
     }
-    LyricSlice_EnumVariant _t34 = EnumDecl___ev_children(e);
-    LyricSlice_EnumVariant evs = _t34;
+    LyricSlice_EnumVariant _t35 = EnumDecl___ev_children(e);
+    LyricSlice_EnumVariant evs = _t35;
     for (int32_t _idx = 0; _idx < evs.len; _idx++) {
         EnumVariant v = evs.data[_idx];
-        Sym _t35 = _lyric_slab_EnumVariant.name[v];
-        bool _t36 = (_t35 == 0);
-        if (_t36) {
+        Sym _t36 = _lyric_slab_EnumVariant.name[v];
+        bool _t37 = (_t36 == 0);
+        if (_t37) {
             continue;
         }
-        Sym _t37 = _lyric_slab_EnumVariant.name[v];
-        Sym _t38 = lyric_unwrap_class(_t37);
-        lyric_string _t39 = sym_to_string(_t38);
-        lyric_string vname = _t39;
-        LyricSlice_VariantField _t40 = lyric_slice_empty(LyricSlice_VariantField);
-        VariantInfo _t41 = _lyric_slab_alloc_VariantInfo();
-        _lyric_slab_VariantInfo.enum_name[_t41] = ename;
-        _lyric_slab_VariantInfo.fields[_t41] = _t40;
-        VariantInfo vi = _t41;
-        LyricSlice_TupleField _t42 = EnumVariant___evf_children(v);
-        LyricSlice_TupleField evfs = _t42;
-        LyricSlice_Type _t43 = lyric_slice_empty(LyricSlice_Type);
-        LyricSlice_Type param_types = _t43;
+        Sym _t38 = _lyric_slab_EnumVariant.name[v];
+        Sym _t39 = lyric_unwrap_class(_t38);
+        lyric_string _t40 = sym_to_string(_t39);
+        lyric_string vname = _t40;
+        LyricSlice_VariantField _t41 = lyric_slice_empty(LyricSlice_VariantField);
+        VariantInfo _t42 = _lyric_slab_alloc_VariantInfo();
+        _lyric_slab_VariantInfo.enum_name[_t42] = ename;
+        _lyric_slab_VariantInfo.fields[_t42] = _t41;
+        VariantInfo vi = _t42;
+        LyricSlice_TupleField _t43 = EnumVariant___evf_children(v);
+        LyricSlice_TupleField evfs = _t43;
+        LyricSlice_Type _t44 = lyric_slice_empty(LyricSlice_Type);
+        LyricSlice_Type param_types = _t44;
         for (int32_t _idx = 0; _idx < evfs.len; _idx++) {
             TupleField f = evfs.data[_idx];
-            Type _t44 = make_any_type();
-            Type ft = _t44;
-            TypeExpr _t45 = _lyric_slab_TupleField.type_expr[f];
-            bool _t46 = (_t45 != 0);
-            if (_t46) {
-                TypeExpr _t47 = _lyric_slab_TupleField.type_expr[f];
-                TypeExpr _t48 = lyric_unwrap_class(_t47);
-                Type _t49 = Checker_resolve_type_expr(self, _t48);
-                ft = _t49;
+            Type _t45 = make_any_type();
+            Type ft = _t45;
+            TypeExpr _t46 = _lyric_slab_TupleField.type_expr[f];
+            bool _t47 = (_t46 != 0);
+            if (_t47) {
+                TypeExpr _t48 = _lyric_slab_TupleField.type_expr[f];
+                TypeExpr _t49 = lyric_unwrap_class(_t48);
+                Type _t50 = Checker_resolve_type_expr(self, _t49);
+                ft = _t50;
             }
             lyric_string fname = LYRIC_STR("");
-            Sym _t50 = _lyric_slab_TupleField.name[f];
-            bool _t51 = (_t50 != 0);
-            if (_t51) {
-                Sym _t52 = _lyric_slab_TupleField.name[f];
-                Sym _t53 = lyric_unwrap_class(_t52);
-                lyric_string _t54 = sym_to_string(_t53);
-                fname = _t54;
+            Sym _t51 = _lyric_slab_TupleField.name[f];
+            bool _t52 = (_t51 != 0);
+            if (_t52) {
+                Sym _t53 = _lyric_slab_TupleField.name[f];
+                Sym _t54 = lyric_unwrap_class(_t53);
+                lyric_string _t55 = sym_to_string(_t54);
+                fname = _t55;
             }
-            LyricSlice_VariantField _t55 = _lyric_slab_VariantInfo.fields[vi];
-            VariantField _t56 = (VariantField){.name = fname, .type_val = ft};
-            LyricSlice_VariantField _t57 = ({ lyric_push(&_t55, _t56, LyricSlice_VariantField); _t55; });
-            _lyric_slab_VariantInfo.fields[vi] = _t55;
-            _t57;
-            LyricSlice_Type _t58 = ({ lyric_push(&param_types, ft, LyricSlice_Type); param_types; });
+            LyricSlice_VariantField _t56 = _lyric_slab_VariantInfo.fields[vi];
+            VariantField _t57 = (VariantField){.name = fname, .type_val = ft};
+            LyricSlice_VariantField _t58 = ({ lyric_push(&_t56, _t57, LyricSlice_VariantField); _t56; });
+            _lyric_slab_VariantInfo.fields[vi] = _t56;
             _t58;
+            LyricSlice_Type _t59 = ({ lyric_push(&param_types, ft, LyricSlice_Type); param_types; });
+            _t59;
         }
-        Dict_CSym_CVariantInfo _t59 = _lyric_slab_TypeInfo.variants[info];
-        Sym _t60 = sym(vname);
-        Dict_CSym_CVariantInfo_set(_t59, _t60, vi);
-        int32_t _t62 = evfs.len;
-        bool _t63 = (_t62 == 0);
-        if (_t63) {
-            Scope _t64 = _lyric_slab_Checker.scope[self];
-            Scope_define(_t64, vname, enum_type);
+        Dict_CSym_CVariantInfo _t60 = _lyric_slab_TypeInfo.variants[info];
+        Sym _t61 = sym(vname);
+        Dict_CSym_CVariantInfo_set(_t60, _t61, vi);
+        int32_t _t63 = evfs.len;
+        bool _t64 = (_t63 == 0);
+        if (_t64) {
+            Scope _t65 = _lyric_slab_Checker.scope[self];
+            Scope_define(_t65, vname, enum_type);
         } else {
-            Scope _t66 = _lyric_slab_Checker.scope[self];
-            LyricSlice_lyric_string _t67 = lyric_slice_empty(LyricSlice_lyric_string);
-            Type _t68 = make_func_type(param_types, enum_type, _t67);
-            Scope_define(_t66, vname, _t68);
+            Scope _t67 = _lyric_slab_Checker.scope[self];
+            LyricSlice_lyric_string _t68 = lyric_slice_empty(LyricSlice_lyric_string);
+            Type _t69 = make_func_type(param_types, enum_type, _t68);
+            Scope_define(_t67, vname, _t69);
         }
     }
 }
