@@ -45,6 +45,10 @@ permanent class CGen {
   needs_exec_cmd: bool
   needs_path_join: bool
 
+  // Vtable generator tracking: temp_id → receiver expr / method name
+  vtable_gen_recv: Dict<Sym, string>?   // temp_id → receiver expression string
+  vtable_gen_method: Dict<Sym, string>? // temp_id → method name
+
   // Simple enum tracking
   simple_enums: Dict<Sym, bool>?
 
@@ -115,6 +119,8 @@ func new_cgen(prog: LProgram?) -> CGen? {
     needs_exec_cmd: false,
     needs_path_join: false,
     simple_enums: Dict<Sym, bool>(),
+    vtable_gen_recv: Dict<Sym, string>(),
+    vtable_gen_method: Dict<Sym, string>(),
     tuple_types: Dict<Sym, string>(),
     tuple_count: 0,
     gen_funcs: Dict<Sym, bool>(),
@@ -784,6 +790,21 @@ func CGen.contains_type_var(self, t: LType?) -> bool {
   let has_key = self.contains_type_var(t!.key)
   let has_ret = self.contains_type_var(t!.ret)
   return has_elem || has_key || has_ret
+}
+
+// Resolve a type for a vtable signature. Type vars that match family members
+// become fat pointer types (e.g. N → DirectedGraph_N); other type vars and
+// types containing type vars erase to void*; concrete types pass through.
+func CGen.resolve_vtable_sig_type(self, t: LType?, if_name: string, family_params: [string]) -> string {
+  if isnull(t) { return "void" }
+  if t!.kind is TyTypeVar {
+    for fp in family_params {
+      if t!.name == fp { return if_name + "_" + fp }
+    }
+    return "void*"
+  }
+  if self.contains_type_var(t) { return "void*" }
+  return self.c_type(t)
 }
 
 func CGen.next_temp(self) -> i32 {
@@ -2869,6 +2890,20 @@ func CGen.emit_stmt(self, s: LStmt?) {
       // {base}_gen_t* struct pointer from the producing call expression.
       // Without this special case, c_type panics on TyGenerator.
       if !isnull(ty) && ty!.kind is TyGenerator {
+        // Check if the producing call goes through a vtable (interface dispatch).
+        // If so, the generator is opaque — emit void* and record vtable info
+        // for the downstream StForIn to use vtable-based iteration.
+        if !isnull(d.expr) && d.expr!.kind is ExMethodCall {
+          let mc = d.expr!.method_call!
+          let recv_type = self.resolve_value_type(mc.receiver)
+          if self.is_iface_type(recv_type) {
+            let recv_str = self.emit_value(mc.receiver)
+            self.vtable_gen_recv!.set(sym(f"{d.id}"), recv_str)
+            self.vtable_gen_method!.set(sym(f"{d.id}"), mc.method)
+            self.line(f"void* {temp_name} = {self.emit_expr_str(d.expr)};")
+            return
+          }
+        }
         let base = self.extract_func_name_from_expr(d.expr)
         if base == "" {
           let mut fn_name = "<unknown>"
@@ -3445,6 +3480,27 @@ func CGen.emit_for_stmt(self, s: LStmt?) {
 
   // Generator iteration
   if !isnull(d.collection) && !isnull(d.collection!.typ) && d.collection!.typ!.kind is TyGenerator {
+    // Check if this generator comes from a vtable call (erased interface dispatch).
+    // If so, the gen variable is void* and we iterate via vtable slots.
+    if d.collection!.kind is ValTemp {
+      let tid_key = sym(f"{d.collection!.temp_id}")
+      let recv_entry = self.vtable_gen_recv!.get(tid_key)
+      if !isnull(recv_entry) {
+        let recv_str = recv_entry!.value
+        let method = self.vtable_gen_method!.get(tid_key)!.value
+        self.lambda_id = self.lambda_id + 1
+        let iter_var = f"_gen_iter_{self.lambda_id}"
+        self.line(f"void* {iter_var} = {coll_str};")
+        self.line(f"while ({recv_str}._vtable->{method}_next({iter_var})) {{")
+        self.indent = self.indent + 1
+        self.line(f"{self.c_type(d.var_type)} {d.var_name} = {recv_str}._vtable->{method}_value({iter_var});")
+        self.emit_stmts(d.body)
+        self.indent = self.indent - 1
+        self.line("}")
+        self.line(f"free({iter_var});")
+        return
+      }
+    }
     let gen_base_name = self.resolve_gen_base_name(d.collection)
     let struct_name = f"{gen_base_name}_gen_t"
     self.lambda_id = self.lambda_id + 1
@@ -5680,6 +5736,13 @@ pub func emit_c(prog: LProgram?) -> string {
     } else {
       // Multi-param: per-family-member vtable structs (design §9)
       let if_name = ifaces[i].name
+      // Forward-declare all family member fat pointer types so vtable
+      // structs can reference each other (e.g. G_vtable returns N).
+      for fp in ifaces[i].family_params {
+        let qual_name = if_name + "_" + fp
+        g.line(f"typedef struct {qual_name} {qual_name};")
+      }
+      g.line("")
       for fp in ifaces[i].family_params {
         let qual_name = if_name + "_" + fp
         g.line(f"typedef struct {qual_name}_vtable {{")
@@ -5688,14 +5751,15 @@ pub func emit_c(prog: LProgram?) -> string {
         while j < len(ifaces[i].methods) {
           let m = ifaces[i].methods[j]
           if m.receiver_type == fp {
-            // Erase type-variable-containing types to void* for vtable signatures
-            let ret_type = if g.contains_type_var(m.return_type) { "void*" } else { g.c_type(m.return_type) }
+            // Resolve types: family member type vars become fat pointer types,
+            // other type vars erase to void*, concrete types pass through.
+            let ret_type = g.resolve_vtable_sig_type(m.return_type, if_name, ifaces[i].family_params)
             let sb = new_string_builder()
             sb.write("void*")
             let mut k = 0
             while k < len(m.params) {
               sb.write(", ")
-              let pt = if g.contains_type_var(m.params[k].typ) { "void*" } else { g.c_type(m.params[k].typ) }
+              let pt = g.resolve_vtable_sig_type(m.params[k].typ, if_name, ifaces[i].family_params)
               sb.write(pt)
               k = k + 1
             }
@@ -5898,14 +5962,14 @@ pub func emit_c(prog: LProgram?) -> string {
             k = k + 1
             continue
           }
-          // Erase type-variable-containing types to void* for vtable casts
-          let ret_type = if g.contains_type_var(m.return_type) { "void*" } else { g.c_type(m.return_type) }
+          // Resolve types: family member type vars become fat pointer types
+          let ret_type = g.resolve_vtable_sig_type(m.return_type, base_iface_name, iface.family_params)
           let sb = new_string_builder()
           sb.write("void*")
           let mut p = 0
           while p < len(m.params) {
             sb.write(", ")
-            let pt = if g.contains_type_var(m.params[p].typ) { "void*" } else { g.c_type(m.params[p].typ) }
+            let pt = g.resolve_vtable_sig_type(m.params[p].typ, base_iface_name, iface.family_params)
             sb.write(pt)
             p = p + 1
           }
@@ -6008,13 +6072,13 @@ pub func emit_c(prog: LProgram?) -> string {
               while k2 < len(ifd2.methods) {
                 let m2 = ifd2.methods[k2]
                 if m2.receiver_type == fp2 {
-                  let ret_type2 = if g.contains_type_var(m2.return_type) { "void*" } else { g.c_type(m2.return_type) }
+                  let ret_type2 = g.resolve_vtable_sig_type(m2.return_type, ifd2.name, ifd2.family_params)
                   let sb2 = new_string_builder()
                   sb2.write("void*")
                   let mut p2 = 0
                   while p2 < len(m2.params) {
                     sb2.write(", ")
-                    let pt2 = if g.contains_type_var(m2.params[p2].typ) { "void*" } else { g.c_type(m2.params[p2].typ) }
+                    let pt2 = g.resolve_vtable_sig_type(m2.params[p2].typ, ifd2.name, ifd2.family_params)
                     sb2.write(pt2)
                     p2 = p2 + 1
                   }
