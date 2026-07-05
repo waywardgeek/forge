@@ -73,9 +73,10 @@ decisions *about where knowledge lives*, not features:
    `field` is flattened (injected state, monomorphized accessors,
    direct field access — the Scala/DataDraw lane). The user never
    chooses a strategy; the declaration's shape *is* the choice. §7.1
-   shows the flattened lane is forced, not preferred: injected fields
-   can hold unboxed value types, which no erased representation can
-   carry.
+   justifies the flattened lane: chosen for the current hints (speed,
+   simpler machinery, debuggable state), and forced outright once an
+   injected field's type is a value parameter — no erased
+   representation can carry unboxed varying-size storage.
 
 2. **Impl identity is carried by values and types, never by names
    below the type system.** The previous design tracked "which
@@ -401,11 +402,30 @@ selects everything:
 | Compilation | **erased** — fat pointers, defaults compiled once | **flattened** — fields injected, methods monomorphized, direct access |
 | Precedent | Go/Java/Rust default methods | Scala trait fields / mixin flattening |
 
-Erasure is *impossible* for state-injecting interfaces, not merely
-slow: injected fields may hold unboxed value-parameter types
-(`DictEntry<Sym, f64>.value: f64`), and the trusted-RC machinery
-decides ref/unref no-ops per monomorphized copy. Flattening is forced
-— and it is also what preserves the DataDraw zero-overhead promise.
+Flattening is a **choice** for today's hints and **forced** only at a
+boundary the design permits but no shipped hint yet crosses
+(clarified with Bill, 2026-07-05):
+
+- Every field the current hints inject is representation-uniform
+  (class pointers, `i32`, `u64`, `[C]`), so their default methods
+  *could* be compiled once over accessor vtable slots, with
+  ref/unref as nullable slots. We flatten anyway because: (a) the
+  speed is the product promise — relations are the compiler's own
+  inner loop, and an erased `append` is ~7 uninlinable indirect
+  calls in place of five direct stores; (b) at relation use sites
+  the concrete types are always statically known, so recovering the
+  speed would need a devirtualizer that re-does monomorphization in
+  a harder place — flattening IS devirtualization done at the
+  declaration, where it's trivial; (c) injected state stays visible
+  as plain struct members (the debugging half of Java's
+  default-method lesson).
+- Erasure becomes *impossible* the moment an injected field's type
+  is a value parameter (e.g. a hint storing an inline `K` copy):
+  one compiled body cannot address storage whose size varies per
+  instantiation without boxing it, and the trusted-RC machinery
+  decides ref/unref no-ops per monomorphized copy. The boundary
+  rule draws the line where it would eventually be forced.
+
 
 A flattened relation can *additionally* stamp out a vtable on demand
 if someone boxes a participant (the vtable's getters/setters read the
@@ -969,8 +989,8 @@ let counts = Dict<Sym, i32>()       // stamps impl<Sym, i32>: fields
 counts.set(`x`, 42)                 //   __d_children: [DictEntry_Sym_i32], …
 
 let weights = Dict<Sym, f64>()      // separate stamp: f64 values stored
-weights.set(`route7`, 0.25)         //   UNBOXED in the entry — this is why
-                                    //   flattening is forced, not preferred (§7.1)
+weights.set(`route7`, 0.25)         //   UNBOXED in the entry — per-stamp
+                                    //   class layout, no boxing (§7.1)
 
 let index = Dict<Sym, Route>()      // class-typed V: the trusted-RC
 index.set(`r0`, r)                  //   machinery emits real ref/unref here,
