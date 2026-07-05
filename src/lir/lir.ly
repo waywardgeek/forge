@@ -694,6 +694,9 @@ lyric lir {
     // Which type params are family (receiver-position) vs value (Phase 4).
     // Single-param interfaces have one entry. Multi-param: one per class-typed param.
     family_params: [string]
+    // True if the interface is method-only (erased to fat pointers).
+    // False for field-bearing interfaces (monomorphized, no vtables).
+    is_erased: bool
     // Ordered vtable slot list, populated by lowerer from checker's vtable_layout.
     vtable_slots: [LVtableSlot]
   }

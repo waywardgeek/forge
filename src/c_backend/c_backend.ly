@@ -374,8 +374,8 @@ func c_un_op(op: LUnOpKind) -> string {
 // Type mapping
 // ---------------------------------------------------------------------------
 
-// is_iface_type: returns true if this LType represents a single-param
-// interface (fat pointer). Handles both TyInterfaceRef (new) and the
+// is_iface_type: returns true if this LType represents an interface
+// (fat pointer). Handles both TyInterfaceRef (new) and the
 // legacy TyAny-with-interface-name path.
 func CGen.is_iface_type(self, t: LType?) -> bool {
   if isnull(t) { return false }
@@ -386,10 +386,14 @@ func CGen.is_iface_type(self, t: LType?) -> bool {
   return false
 }
 
-// iface_type_name: returns the interface name from an LType that
-// is_iface_type returned true for.
+// iface_type_name: returns the C type name for an interface LType.
+// For multi-param interfaces with member_name, returns "Iface_Member" (e.g. "DirectedGraph_G").
+// For single-param, returns the bare interface name (e.g. "Printable").
 func iface_type_name(t: LType?) -> string {
   if isnull(t) { return "" }
+  if t!.member_name != "" {
+    return t!.name + "_" + t!.member_name
+  }
   return t!.name
 }
 
@@ -426,6 +430,10 @@ func CGen.c_type(self, t: LType?) -> string {
       return "void*"
     }
     TyInterfaceRef => {
+      // For multi-param interfaces, C type is "{iface}_{member}" (e.g. DirectedGraph_G)
+      if t!.member_name != "" {
+        return t!.name + "_" + t!.member_name
+      }
       return t!.name
     }
     TyUnion => { return "LyricUnion" }
@@ -5600,60 +5608,106 @@ pub func emit_c(prog: LProgram?) -> string {
     i = i + 1
   }
 
-  // Emit interface vtables
+  // Emit interface vtables (only for erased/method-only interfaces)
   let ifaces = prog_ref.interfaces
   i = 0
   while i < len(ifaces) {
-    // Skip multi-param interfaces (Phase 2+ handles those via monomorphization).
-    // Zero-param and single-param interfaces are emitted as erased fat-pointer types.
-    if len(ifaces[i].type_params) > 1 {
-      i = i + 1
-      continue
-    }
-    let if_name = ifaces[i].name
-    g.line(f"typedef struct {if_name}_vtable {{")
-    g.indent = g.indent + 1
-    let mut j = 0
-    while j < len(ifaces[i].methods) {
-      let m = ifaces[i].methods[j]
-      let ret_type = g.c_type(m.return_type)
-      let sb = new_string_builder()
-      sb.write("void*")
-      let mut k = 0
-      while k < len(m.params) {
-        sb.write(", ")
-        sb.write(g.c_type(m.params[k].typ))
-        k = k + 1
+    // Skip non-erased interfaces. Bootstrap compat: if family_params is empty
+    // (old binary didn't populate it), fall back to type_params > 1.
+    let has_family_info = len(ifaces[i].family_params) > 0
+    if has_family_info {
+      if !ifaces[i].is_erased {
+        i = i + 1
+        continue
       }
-      g.line(f"{ret_type} (*{m.name})({sb.to_string()});")
-      j = j + 1
+    } else {
+      // Bootstrap fallback: old binary didn't populate family_params/is_erased
+      if len(ifaces[i].type_params) > 1 {
+        i = i + 1
+        continue
+      }
     }
-    g.indent = g.indent - 1
-    g.line(f"}} {if_name}_vtable;")
-    g.line(f"typedef struct {if_name} {{")
-    g.indent = g.indent + 1
-    g.line("void* _data;")
-    g.line(f"const {if_name}_vtable* _vtable;")
-    g.indent = g.indent - 1
-    g.line(f"}} {if_name};")
-    g.line("")
+    let is_multi = has_family_info && len(ifaces[i].family_params) > 1
+    if !is_multi {
+      // Single-param: one vtable struct with all methods
+      let if_name = ifaces[i].name
+      g.line(f"typedef struct {if_name}_vtable {{")
+      g.indent = g.indent + 1
+      let mut j = 0
+      while j < len(ifaces[i].methods) {
+        let m = ifaces[i].methods[j]
+        // Erase type-variable-containing types to void* for vtable signatures
+        let ret_type = if g.contains_type_var(m.return_type) { "void*" } else { g.c_type(m.return_type) }
+        let sb = new_string_builder()
+        sb.write("void*")
+        let mut k = 0
+        while k < len(m.params) {
+          sb.write(", ")
+          let pt = if g.contains_type_var(m.params[k].typ) { "void*" } else { g.c_type(m.params[k].typ) }
+          sb.write(pt)
+          k = k + 1
+        }
+        g.line(f"{ret_type} (*{m.name})({sb.to_string()});")
+        j = j + 1
+      }
+      g.indent = g.indent - 1
+      g.line(f"}} {if_name}_vtable;")
+      g.line(f"typedef struct {if_name} {{")
+      g.indent = g.indent + 1
+      g.line("void* _data;")
+      g.line(f"const {if_name}_vtable* _vtable;")
+      g.indent = g.indent - 1
+      g.line(f"}} {if_name};")
+      g.line("")
+    } else {
+      // Multi-param: per-family-member vtable structs (design §9)
+      let if_name = ifaces[i].name
+      for fp in ifaces[i].family_params {
+        let qual_name = if_name + "_" + fp
+        g.line(f"typedef struct {qual_name}_vtable {{")
+        g.indent = g.indent + 1
+        let mut j = 0
+        while j < len(ifaces[i].methods) {
+          let m = ifaces[i].methods[j]
+          if m.receiver_type == fp {
+            // Erase type-variable-containing types to void* for vtable signatures
+            let ret_type = if g.contains_type_var(m.return_type) { "void*" } else { g.c_type(m.return_type) }
+            let sb = new_string_builder()
+            sb.write("void*")
+            let mut k = 0
+            while k < len(m.params) {
+              sb.write(", ")
+              let pt = if g.contains_type_var(m.params[k].typ) { "void*" } else { g.c_type(m.params[k].typ) }
+              sb.write(pt)
+              k = k + 1
+            }
+            g.line(f"{ret_type} (*{m.name})({sb.to_string()});")
+          }
+          j = j + 1
+        }
+        g.indent = g.indent - 1
+        g.line(f"}} {qual_name}_vtable;")
+        g.line(f"typedef struct {qual_name} {{")
+        g.indent = g.indent + 1
+        g.line("void* _data;")
+        g.line(f"const {qual_name}_vtable* _vtable;")
+        g.indent = g.indent - 1
+        g.line(f"}} {qual_name};")
+        g.line("")
+      }
+    }
     i = i + 1
   }
 
-  // Static vtable instances
+  // Static vtable instances (forward declarations)
   i = 0
   while i < len(classes) {
     let class_name = classes[i].name
     let mut j = 0
     while j < len(classes[i].implements) {
-      let iface_name = classes[i].implements[j]
-      let iface_entry = g.iface_by_name!.get(sym(iface_name))
-      if !isnull(iface_entry) {
-        // Only emit vtable instances for erased interfaces (≤ 1 type param)
-        if len(iface_entry!.value.type_params) <= 1 {
-          g.line(f"static const {iface_name}_vtable {class_name}_as_{iface_name};")
-        }
-      }
+      let impl_key = classes[i].implements[j]
+      // impl_key is "Printable" (single) or "DirectedGraph_G" (multi)
+      g.line(f"static const {impl_key}_vtable {class_name}_as_{impl_key};")
       j = j + 1
     }
     i = i + 1
@@ -5705,32 +5759,59 @@ pub func emit_c(prog: LProgram?) -> string {
     let class_name = classes[i].name
     let mut j = 0
     while j < len(classes[i].implements) {
-      let iface_name = classes[i].implements[j]
-      let iface_entry = g.iface_by_name!.get(sym(iface_name))
+      let impl_key = classes[i].implements[j]
+      // impl_key is "Printable" (single) or "DirectedGraph_G" (multi)
+      // For multi-param, extract base iface name and family member name
+      let mut base_iface_name = impl_key
+      let mut family_member = ""
+      // Check if this is a qualified multi-param key by scanning for underscore
+      let mut split_pos = -1
+      let mut ci = len(impl_key) - 1
+      while ci >= 0 {
+        if impl_key[ci] == '_' {
+          split_pos = ci
+          ci = -1
+        }
+        ci = ci - 1
+      }
+      if split_pos > 0 {
+        let candidate_base = impl_key[:split_pos]
+        let candidate_member = impl_key[split_pos + 1:]
+        let candidate_entry = g.iface_by_name!.get(sym(candidate_base))
+        if !isnull(candidate_entry) && len(candidate_entry!.value.family_params) > 1 {
+          base_iface_name = candidate_base
+          family_member = candidate_member
+        }
+      }
+      let iface_entry = g.iface_by_name!.get(sym(base_iface_name))
       if !isnull(iface_entry) {
         let iface = iface_entry!.value
-        // Only emit vtable definitions for erased interfaces (≤ 1 type param)
-        if len(iface.type_params) <= 1 {
-        g.line(f"static const {iface_name}_vtable {class_name}_as_{iface_name} = {{")
+        g.line(f"static const {impl_key}_vtable {class_name}_as_{impl_key} = {{")
         g.indent = g.indent + 1
         let mut k = 0
         while k < len(iface.methods) {
           let m = iface.methods[k]
-          let ret_type = g.c_type(m.return_type)
+          // For multi-param, only include methods for this family member
+          if family_member != "" && m.receiver_type != family_member {
+            k = k + 1
+            continue
+          }
+          // Erase type-variable-containing types to void* for vtable casts
+          let ret_type = if g.contains_type_var(m.return_type) { "void*" } else { g.c_type(m.return_type) }
           let sb = new_string_builder()
           sb.write("void*")
           let mut p = 0
           while p < len(m.params) {
             sb.write(", ")
-            sb.write(g.c_type(m.params[p].typ))
+            let pt = if g.contains_type_var(m.params[p].typ) { "void*" } else { g.c_type(m.params[p].typ) }
+            sb.write(pt)
             p = p + 1
           }
           let cast_type = f"{ret_type}(*)({sb.to_string()})"
           // Prefer the impl wrapper (Class_Interface_method) if it exists;
           // otherwise use the direct class method (Class_method).
-          // func_by_name keys are "receiver.method_name" for methods.
-          let impl_wrapper_key = f"{class_name}.{iface_name}_{m.name}"
-          let impl_wrapper_cname = f"{class_name}_{iface_name}_{m.name}"
+          let impl_wrapper_key = f"{class_name}.{base_iface_name}_{m.name}"
+          let impl_wrapper_cname = f"{class_name}_{base_iface_name}_{m.name}"
           let direct_cname = f"{class_name}_{m.name}"
           let fn_name = if !isnull(g.func_by_name!.get(sym(impl_wrapper_key))) { impl_wrapper_cname } else { direct_cname }
           g.line(f".{m.name} = ({cast_type}){fn_name},")
@@ -5738,7 +5819,6 @@ pub func emit_c(prog: LProgram?) -> string {
         }
         g.indent = g.indent - 1
         g.line("};")
-        }
       }
       j = j + 1
     }

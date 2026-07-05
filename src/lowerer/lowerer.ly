@@ -323,7 +323,8 @@ lyric lowerer {
     }
     if self.interfaces!.has(sym(n)) {
       // Single-param interfaces → erased fat pointers (TyInterfaceRef).
-      // Multi-param interfaces (relations) → monomorphized, stay TyAny.
+      // Multi-param interfaces must use qualified syntax (DirectedGraph.N);
+      // bare name stays TyAny.
       let iface_entry = self.interfaces!.get(sym(n))
       if !isnull(iface_entry) {
         let itp = iface_entry!.value.itp.children()
@@ -552,18 +553,21 @@ lyric lowerer {
         }
       }
 
-      // Auto-detect implements from impl blocks for single-param interfaces.
-      // For `impl Printable<Dog>`, add "Printable" to Dog's implements list
-      // so the C backend emits vtable structs and instances.
-      // Only for ≤1 type-param interfaces (erased fat-pointer types).
-      // Multi-param relation interfaces are monomorphized, not erased.
+      // Auto-detect implements from impl blocks.
+      // For single-param: `impl Printable<Dog>` adds "Printable" to Dog's implements.
+      // For multi-param: `impl DirectedGraph<Airline, Airport, Flight>` adds
+      // "DirectedGraph_G" to Airline, "DirectedGraph_N" to Airport, "DirectedGraph_E" to Flight.
+      // Per-family-member vtable structs (design §9, recommended approach).
+      // Field-bearing interfaces (§7.1) stay monomorphized — skip those.
       for ib in block.ib.children() {
         if isnull(ib.interface_name) { continue }
         let iface_name = ib.interface_name!.name
         let iface_entry = self.lowered_ifaces!.get(sym(iface_name))
         if isnull(iface_entry) { continue }
         let iface = iface_entry!.value
-        if len(iface.type_params) > 1 { continue }
+        // Field-bearing interfaces are monomorphized, not erased (design §7.1).
+        if !iface.is_erased { continue }
+        let is_multi = len(iface.family_params) > 1
         // Extract concrete class name from impl type args
         let ib_args = ib.ib_arg.children()
         let mut k = 0
@@ -572,14 +576,29 @@ lyric lowerer {
             let lt = self.lower_type(ib_args[k].type_expr!)
             if !isnull(lt) {
               let class_name = lt!.name
-              for c in classes {
-                if c.name == class_name {
-                  let mut already = false
-                  for existing in c.implements {
-                    if existing == iface_name { already = true }
+              // For multi-param, only add if this type param is a family member
+              let mut is_family = !is_multi
+              let mut family_name = ""
+              if is_multi {
+                for fp in iface.family_params {
+                  if fp == tp.name {
+                    is_family = true
+                    family_name = fp
                   }
-                  if !already {
-                    append(c.implements, iface_name)
+                }
+              }
+              if is_family {
+                // impl_key: "Printable" for single, "DirectedGraph_G" for multi
+                let impl_key = if is_multi { iface_name + "_" + family_name } else { iface_name }
+                for c in classes {
+                  if c.name == class_name {
+                    let mut already = false
+                    for existing in c.implements {
+                      if existing == impl_key { already = true }
+                    }
+                    if !already {
+                      append(c.implements, impl_key)
+                    }
                   }
                 }
               }
@@ -733,13 +752,19 @@ lyric lowerer {
   func Lowerer.lower_interface_decl(self, id: InterfaceDecl?) -> LInterfaceDecl {
     let mut methods: [LInterfaceMethod] = []
     let mut tps: [LTypeParam] = []
+    // Determine if method-only (erased) or field-bearing (monomorphized)
+    let mut erased = true
+    if !isnull(id) && len(id!.ifd.children()) > 0 {
+      erased = false
+    }
     if !isnull(id) {
       for m in id!.im.children() {
         if !isnull(m.name) {
           let mut params: [LParam] = []
           for p in m.param.children() {
             if !isnull(p.name) && !p.is_self {
-              append(params, LParam { name: p.name!.name, typ: self.lower_type(p.type_expr), mutable: p.is_mut })
+              let pt = self.lower_type(p.type_expr)
+              append(params, LParam { name: p.name!.name, typ: pt, mutable: p.is_mut })
             }
           }
           let rt = self.lower_type(m.return_type)
@@ -756,7 +781,22 @@ lyric lowerer {
     }
     let name = if !isnull(id) && !isnull(id!.name) { id!.name!.name } else { "" }
     let exported = if !isnull(id) { id!.is_public } else { false }
-    return LInterfaceDecl { name: name, type_params: tps, methods: methods, is_exported: exported }
+
+    // Classify family params: type params that appear as receiver_type on methods
+    let mut fps: [string] = []
+    let receiver_set = Dict<Sym, bool>()
+    for m in methods {
+      if m.receiver_type != "" {
+        receiver_set.set(sym(m.receiver_type), true)
+      }
+    }
+    for tp in tps {
+      if receiver_set.has(sym(tp.name)) {
+        append(fps, tp.name)
+      }
+    }
+
+    return LInterfaceDecl { name: name, type_params: tps, methods: methods, is_exported: exported, family_params: fps, is_erased: erased }
   }
 
   // ---------- Impl block lowering ----------
@@ -3790,6 +3830,40 @@ lyric lowerer {
     let e = self.variant_to_enum!.get(sym(variant_name))
     if !isnull(e) { return e!.value }
     return ""
+  }
+
+  // erase_type_vars: replace type variable references with void* (TyAny)
+  // for vtable method signatures. Cross-family type params become void*
+  // so the vtable struct is concrete C, not generic.
+  func erase_type_vars(t: LType?, tp_names: Dict<Sym, bool>) -> LType? {
+    if isnull(t) { return null }
+    // Direct type variable → void*
+    if t!.kind is TyTypeVar {
+      return LType { kind: TyAny, name: "", bits: 0, is_exported: false }
+    }
+    // Named TyAny that matches a type param → void*
+    if t!.kind is TyAny && t!.name != "" && tp_names.has(sym(t!.name)) {
+      return LType { kind: TyAny, name: "", bits: 0, is_exported: false }
+    }
+    // Recurse into composite types
+    if t!.kind is TySlice {
+      let erased_elem = erase_type_vars(t!.elem, tp_names)
+      return LType { kind: TySlice, name: t!.name, elem: erased_elem, bits: 0, is_exported: false }
+    }
+    if t!.kind is TyOptional {
+      let erased_elem = erase_type_vars(t!.elem, tp_names)
+      return LType { kind: TyOptional, name: t!.name, elem: erased_elem, bits: 0, is_exported: false }
+    }
+    if t!.kind is TyErrorResult {
+      let erased_elem = erase_type_vars(t!.elem, tp_names)
+      return LType { kind: TyErrorResult, name: t!.name, elem: erased_elem, bits: 0, is_exported: false }
+    }
+    if t!.kind is TyGenerator {
+      let erased_elem = erase_type_vars(t!.elem, tp_names)
+      return LType { kind: TyGenerator, name: t!.name, elem: erased_elem, bits: 0, is_exported: false }
+    }
+    // Concrete types (i32, string, etc.) pass through unchanged
+    return t
   }
 
 }
