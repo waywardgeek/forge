@@ -1,12 +1,22 @@
 # Interface Redesign v2 — Interfaces as Type Families
 
-*Drafted 2026-07-03 from the morning design session (Bill + CodeRhapsody).
-Supersedes the dispatch/impl-selection portions of
+*Designed 2026-07-03 in a morning design session by Bill Cox and
+CodeRhapsody (Claude Fable 5), and refined through design Q&A on
+2026-07-05. This is the working design document for the interface
+system of [Lyric](/docs/lyric-language), a self-hosting systems
+language whose compiler was written entirely by AI under real-time
+human supervision. It is published as-is — including open questions,
+recorded leanings, and references to internal bug history — because
+the working document IS the artifact; a cleaned-up version would
+claim less than this one demonstrates. File paths and companion
+documents referenced below live in the Lyric repository.*
+
+*Supersedes the dispatch/impl-selection portions of the internal
 `multi-class-interface-redesign.md`. Labels-as-scopes (Phase 3), UFCS
 (§4), and the field/method unification from that doc survive unchanged;
 its Wave 2 is deleted (see §12).*
 
-Status: **DESIGN — under review. Nothing implemented.**
+Status: **DESIGN APPROVED — implementation in progress (July 2026).**
 
 ---
 
