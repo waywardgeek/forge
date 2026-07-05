@@ -5700,6 +5700,7 @@ pub func emit_c(prog: LProgram?) -> string {
   }
 
   // Static vtable instances (forward declarations)
+  // Phase 1: from explicit implements list (populated by impl blocks)
   i = 0
   while i < len(classes) {
     let class_name = classes[i].name
@@ -5709,6 +5710,77 @@ pub func emit_c(prog: LProgram?) -> string {
       // impl_key is "Printable" (single) or "DirectedGraph_G" (multi)
       g.line(f"static const {impl_key}_vtable {class_name}_as_{impl_key};")
       j = j + 1
+    }
+    i = i + 1
+  }
+
+  // Phase 2: Level 0 structural auto-detection for erased multi-param interfaces.
+  // For each erased interface, check if any class has all required methods for
+  // each family member. Emit vtable forward declarations directly (no string
+  // concatenation stored in implements — avoids Lyric string lifetime issues).
+  // Build a set of "ClassName_methodName" for quick method lookup.
+  let func_name_set = Dict<Sym, bool>()
+  i = 0
+  while i < len(funcs) {
+    if funcs[i].receiver != "" {
+      func_name_set.set(sym(funcs[i].receiver + "_" + funcs[i].name), true)
+    }
+    i = i + 1
+  }
+  // Track which (class, impl_key) pairs we've emitted to avoid duplicates
+  let emitted_impls = Dict<Sym, bool>()
+  i = 0
+  while i < len(ifaces) {
+    let ifd = ifaces[i]
+    if ifd.is_erased && len(ifd.family_params) > 1 {
+      let mut fi = 0
+      while fi < len(ifd.family_params) {
+        let fp = ifd.family_params[fi]
+        // Collect abstract method names for this family member
+        let mut required_methods: [string] = []
+        let mut mi = 0
+        while mi < len(ifd.methods) {
+          if ifd.methods[mi].receiver_type == fp {
+            append(required_methods, ifd.methods[mi].name)
+          }
+          mi = mi + 1
+        }
+        if len(required_methods) > 0 {
+          // Check each class
+          let mut ci = 0
+          while ci < len(classes) {
+            let cname = classes[ci].name
+            let dedup_key = cname + "_as_" + ifd.name + "_" + fp
+            // Skip if already emitted via Level 0 or already in implements list (from impl blocks)
+            let mut already_declared = emitted_impls.has(sym(dedup_key))
+            if !already_declared {
+              let mut ei = 0
+              while ei < len(classes[ci].implements) {
+                if classes[ci].implements[ei] == ifd.name + "_" + fp {
+                  already_declared = true
+                }
+                ei = ei + 1
+              }
+            }
+            if !already_declared {
+              let mut all_found = true
+              let mut ri = 0
+              while ri < len(required_methods) {
+                if !func_name_set.has(sym(cname + "_" + required_methods[ri])) {
+                  all_found = false
+                }
+                ri = ri + 1
+              }
+              if all_found {
+                emitted_impls.set(sym(dedup_key), true)
+                g.line(f"static const {ifd.name}_{fp}_vtable {cname}_as_{ifd.name}_{fp};")
+              }
+            }
+            ci = ci + 1
+          }
+        }
+        fi = fi + 1
+      }
     }
     i = i + 1
   }
@@ -5812,7 +5884,9 @@ pub func emit_c(prog: LProgram?) -> string {
           // otherwise use the direct class method (Class_method).
           let impl_wrapper_key = f"{class_name}.{base_iface_name}_{m.name}"
           let impl_wrapper_cname = f"{class_name}_{base_iface_name}_{m.name}"
-          let direct_cname = f"{class_name}_{m.name}"
+          // Generator-returning methods use _init suffix
+          let gen_suffix = if !isnull(m.return_type) && m.return_type!.kind is TyGenerator { "_init" } else { "" }
+          let direct_cname = f"{class_name}_{m.name}{gen_suffix}"
           let fn_name = if !isnull(g.func_by_name!.get(sym(impl_wrapper_key))) { impl_wrapper_cname } else { direct_cname }
           g.line(f".{m.name} = ({cast_type}){fn_name},")
           k = k + 1
@@ -5824,6 +5898,92 @@ pub func emit_c(prog: LProgram?) -> string {
     }
     i = i + 1
   }
+
+  // Phase 2: Level 0 structural auto-detection vtable definitions.
+  // Same detection as forward declarations; emit definitions with method wiring.
+  let func_name_set2 = Dict<Sym, bool>()
+  i = 0
+  while i < len(funcs) {
+    if funcs[i].receiver != "" {
+      func_name_set2.set(sym(funcs[i].receiver + "_" + funcs[i].name), true)
+    }
+    i = i + 1
+  }
+  i = 0
+  while i < len(ifaces) {
+    let ifd2 = ifaces[i]
+    if ifd2.is_erased && len(ifd2.family_params) > 1 {
+      let mut fi2 = 0
+      while fi2 < len(ifd2.family_params) {
+        let fp2 = ifd2.family_params[fi2]
+        let mut required_methods2: [string] = []
+        let mut mi2 = 0
+        while mi2 < len(ifd2.methods) {
+          if ifd2.methods[mi2].receiver_type == fp2 {
+            append(required_methods2, ifd2.methods[mi2].name)
+          }
+          mi2 = mi2 + 1
+        }
+        if len(required_methods2) > 0 {
+          let mut ci2 = 0
+          while ci2 < len(classes) {
+            let cname2 = classes[ci2].name
+            // Skip if already has this impl from impl blocks
+            let mut already2 = false
+            let mut ei2 = 0
+            while ei2 < len(classes[ci2].implements) {
+              if classes[ci2].implements[ei2] == ifd2.name + "_" + fp2 {
+                already2 = true
+              }
+              ei2 = ei2 + 1
+            }
+            if !already2 {
+            let mut all_found2 = true
+            let mut ri2 = 0
+            while ri2 < len(required_methods2) {
+              if !func_name_set2.has(sym(cname2 + "_" + required_methods2[ri2])) {
+                all_found2 = false
+              }
+              ri2 = ri2 + 1
+            }
+            if all_found2 {
+              // Emit vtable definition
+              g.line(f"static const {ifd2.name}_{fp2}_vtable {cname2}_as_{ifd2.name}_{fp2} = {{")
+              g.indent = g.indent + 1
+              let mut k2 = 0
+              while k2 < len(ifd2.methods) {
+                let m2 = ifd2.methods[k2]
+                if m2.receiver_type == fp2 {
+                  let ret_type2 = if g.contains_type_var(m2.return_type) { "void*" } else { g.c_type(m2.return_type) }
+                  let sb2 = new_string_builder()
+                  sb2.write("void*")
+                  let mut p2 = 0
+                  while p2 < len(m2.params) {
+                    sb2.write(", ")
+                    let pt2 = if g.contains_type_var(m2.params[p2].typ) { "void*" } else { g.c_type(m2.params[p2].typ) }
+                    sb2.write(pt2)
+                    p2 = p2 + 1
+                  }
+                  let cast_type2 = f"{ret_type2}(*)({sb2.to_string()})"
+                  // Generator-returning methods use _init suffix
+                  let fn_suffix = if !isnull(m2.return_type) && m2.return_type!.kind is TyGenerator { "_init" } else { "" }
+                  g.line(f".{m2.name} = ({cast_type2}){cname2}_{m2.name}{fn_suffix},")
+                }
+                k2 = k2 + 1
+              }
+              g.indent = g.indent - 1
+              g.line("};")
+            }
+            } // if !already2
+            ci2 = ci2 + 1
+          }
+        }
+        fi2 = fi2 + 1
+      }
+    }
+    i = i + 1
+  }
+
   if len(classes) > 0 {
     g.line("")
   }

@@ -4325,6 +4325,32 @@ lyric checker {
       }
     }
 
+    // Free function UFCS (design §11.1, step 3):
+    // Look up method_str as a free function in scope. If its first param is
+    // an interface type (e.g., DirectedGraph.G), check if the receiver class
+    // satisfies that interface member and resolve as UFCS call.
+    let free_fn = self.scope.lookup(method_str)
+    if free_fn != null {
+      match free_fn!.kind {
+        Func(params, ret, _) => {
+          if len(params) > 0 {
+            match params[0].kind {
+              Interface(iface_member) => {
+                let recv_class = type_name(recv_type)
+                if recv_class != "" {
+                  if self.check_structural_satisfaction(recv_class, iface_member) {
+                    return ret
+                  }
+                }
+              }
+              _ => {}
+            }
+          }
+        }
+        _ => {}
+      }
+    }
+
     eprintln(f"checker: unknown method: {method_str} at {call_expr.span.start.file}:{itoa(call_expr.span.start.line as i64)}:{itoa(call_expr.span.start.column as i64)}")
     os_exit(1)
     return make_error_type()
