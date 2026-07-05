@@ -47069,111 +47069,36 @@ Type Checker_check_method_call(Checker self, Expr call_expr, Expr receiver, Sym 
             }
         }
     }
-    lyric_string _t289 = type_name(recv_type);
-    lyric_string class_name = _t289;
-    bool _t290 = (!lyric_str_eq(class_name, LYRIC_STR("")));
-    if (_t290) {
-        Dict_CSym_CInterfaceDecl _t291 = _lyric_slab_Checker.iface_decls[self];
-        LyricSlice_Sym _t292 = Dict_CSym_CInterfaceDecl_keys(_t291);
-        LyricSlice_Sym iface_entries = _t292;
-        for (int32_t _idx = 0; _idx < iface_entries.len; _idx++) {
-            Sym ie = iface_entries.data[_idx];
-            Dict_CSym_CInterfaceDecl _t293 = _lyric_slab_Checker.iface_decls[self];
-            DictEntry_CSym_CInterfaceDecl _t294 = Dict_CSym_CInterfaceDecl_get(_t293, ie);
-            DictEntry_CSym_CInterfaceDecl iface = _t294;
-            bool _t295 = (iface == 0);
-            if (_t295) {
-                continue;
-            }
-            Registry _t296 = _lyric_slab_Checker.registry[self];
-            lyric_string _t297 = _lyric_slab_Sym.name[ie];
-            TypeInfo _t298 = Registry_lookup(_t296, _t297);
-            TypeInfo iface_info = _t298;
-            bool _t299 = (iface_info == 0);
-            if (_t299) {
-                continue;
-            }
-            TypeInfo _t300 = lyric_unwrap_class(iface_info);
-            LyricSlice_lyric_string _t301 = _lyric_slab_TypeInfo.family_params[_t300];
-            LyricSlice_lyric_string fps = _t301;
-            for (int32_t _idx = 0; _idx < fps.len; _idx++) {
-                lyric_string fp = fps.data[_idx];
-                lyric_string _t302 = _lyric_slab_Sym.name[ie];
-                lyric_string _t303 = lyric_str_concat(_t302, LYRIC_STR("."));
-                lyric_string _t304 = lyric_str_concat(_t303, fp);
-                lyric_string qualified = _t304;
-                Registry _t305 = _lyric_slab_Checker.registry[self];
-                TypeInfo _t306 = Registry_lookup(_t305, qualified);
-                TypeInfo fp_info = _t306;
-                bool _t307 = (fp_info == 0);
-                if (_t307) {
-                    continue;
-                }
-                TypeInfo _t308 = lyric_unwrap_class(fp_info);
-                Dict_CSym_CType _t309 = _lyric_slab_TypeInfo.methods[_t308];
-                Sym _t310 = sym(method_str);
-                DictEntry_CSym_CType _t311 = Dict_CSym_CType_get(_t309, _t310);
-                DictEntry_CSym_CType mt = _t311;
-                bool _t312 = (mt == 0);
-                if (_t312) {
-                    continue;
-                }
-                bool _t313 = Checker_check_structural_satisfaction(self, class_name, qualified);
-                if (_t313) {
-                    DictEntry_CSym_CType _t314 = lyric_unwrap_class(mt);
-                    Type _t315 = _lyric_slab_DictEntry_CSym_CType.value[_t314];
-                    TypeKind _t316 = _lyric_slab_Type.kind[_t315];
-                    int32_t _t317 = _t316.tag;
-                    switch (_t317) {
-                    case 14: {
-                        LyricSlice_Type _t318 = _t316.data.func.params;
-                        LyricSlice_Type params = _t318;
-                        Type _t319 = _t316.data.func.ret;
-                        Type ret = _t319;
-                        return ret;
-                        break;
-                    }
-                    default: {
-                        DictEntry_CSym_CType _t320 = lyric_unwrap_class(mt);
-                        Type _t321 = _lyric_slab_DictEntry_CSym_CType.value[_t320];
-                        return _t321;
-                        break;
-                    }
-                    }
-                }
-            }
-        }
-    }
-    Scope _t322 = _lyric_slab_Checker.scope[self];
-    Type _t323 = Scope_lookup(_t322, method_str);
-    Type free_fn = _t323;
-    bool _t324 = (free_fn != 0);
-    if (_t324) {
-        Type _t325 = lyric_unwrap_class(free_fn);
-        TypeKind _t326 = _lyric_slab_Type.kind[_t325];
-        int32_t _t327 = _t326.tag;
-        switch (_t327) {
+    Scope _t289 = _lyric_slab_Checker.scope[self];
+    Type _t290 = Scope_lookup(_t289, method_str);
+    Type free_fn = _t290;
+    bool _t291 = (free_fn != 0);
+    if (_t291) {
+        Type _t292 = lyric_unwrap_class(free_fn);
+        TypeKind _t293 = _lyric_slab_Type.kind[_t292];
+        int32_t _t294 = _t293.tag;
+        switch (_t294) {
         case 14: {
-            LyricSlice_Type _t328 = _t326.data.func.params;
-            LyricSlice_Type params = _t328;
-            Type _t329 = _t326.data.func.ret;
-            Type ret = _t329;
-            int32_t _t330 = params.len;
-            bool _t331 = (_t330 > 0);
-            if (_t331) {
-                Type _t332 = params.data[0];
-                TypeKind _t333 = _lyric_slab_Type.kind[_t332];
-                int32_t _t334 = _t333.tag;
-                switch (_t334) {
+            LyricSlice_Type _t295 = _t293.data.func.params;
+            LyricSlice_Type params = _t295;
+            Type _t296 = _t293.data.func.ret;
+            Type ret = _t296;
+            int32_t _t297 = params.len;
+            bool _t298 = (_t297 > 0);
+            if (_t298) {
+                Type _t299 = params.data[0];
+                TypeKind _t300 = _lyric_slab_Type.kind[_t299];
+                int32_t _t301 = _t300.tag;
+                switch (_t301) {
                 case 18: {
-                    lyric_string _t335 = _t333.data.interface.name;
-                    lyric_string iface_member = _t335;
-                    lyric_string _t336 = type_name(recv_type);
-                    lyric_string recv_class = _t336;
-                    bool _t337 = (!lyric_str_eq(recv_class, LYRIC_STR("")));
-                    if (_t337) {
-                        bool _t338 = Checker_check_structural_satisfaction(self, recv_class, iface_member);
-                        if (_t338) {
+                    lyric_string _t302 = _t300.data.interface.name;
+                    lyric_string iface_member = _t302;
+                    lyric_string _t303 = type_name(recv_type);
+                    lyric_string recv_class = _t303;
+                    bool _t304 = (!lyric_str_eq(recv_class, LYRIC_STR("")));
+                    if (_t304) {
+                        bool _t305 = Checker_check_structural_satisfaction(self, recv_class, iface_member);
+                        if (_t305) {
                             return ret;
                         }
                     }
@@ -47191,24 +47116,24 @@ Type Checker_check_method_call(Checker self, Expr call_expr, Expr receiver, Sym 
         }
         }
     }
-    Span _t339 = _lyric_slab_Expr.span[call_expr];
-    Pos _t340 = _t339.start;
-    Sym _t341 = _t340.file;
-    Span _t342 = _lyric_slab_Expr.span[call_expr];
-    Pos _t343 = _t342.start;
-    int32_t _t344 = _t343.line;
-    int64_t _t345 = ((int64_t)_t344);
-    lyric_string _t346 = lyric_itoa(_t345);
-    Span _t347 = _lyric_slab_Expr.span[call_expr];
-    Pos _t348 = _t347.start;
-    int32_t _t349 = _t348.column;
-    int64_t _t350 = ((int64_t)_t349);
-    lyric_string _t351 = lyric_itoa(_t350);
-    lyric_string _t352 = lyric_sprintf("checker: unknown method: %.*s at %d:%.*s:%.*s", (int)method_str.len, (const char*)method_str.data, _t341, (int)_t346.len, (const char*)_t346.data, (int)_t351.len, (const char*)_t351.data);
-    fprintf(stderr, "%.*s\n", (int)_t352.len, (const char*)_t352.data);
+    Span _t306 = _lyric_slab_Expr.span[call_expr];
+    Pos _t307 = _t306.start;
+    Sym _t308 = _t307.file;
+    Span _t309 = _lyric_slab_Expr.span[call_expr];
+    Pos _t310 = _t309.start;
+    int32_t _t311 = _t310.line;
+    int64_t _t312 = ((int64_t)_t311);
+    lyric_string _t313 = lyric_itoa(_t312);
+    Span _t314 = _lyric_slab_Expr.span[call_expr];
+    Pos _t315 = _t314.start;
+    int32_t _t316 = _t315.column;
+    int64_t _t317 = ((int64_t)_t316);
+    lyric_string _t318 = lyric_itoa(_t317);
+    lyric_string _t319 = lyric_sprintf("checker: unknown method: %.*s at %d:%.*s:%.*s", (int)method_str.len, (const char*)method_str.data, _t308, (int)_t313.len, (const char*)_t313.data, (int)_t318.len, (const char*)_t318.data);
+    fprintf(stderr, "%.*s\n", (int)_t319.len, (const char*)_t319.data);
     exit(1);
-    Type _t355 = make_error_type();
-    return _t355;
+    Type _t322 = make_error_type();
+    return _t322;
 }
 
 Type Checker_check_builtin_method(Checker self, Type recv_type, lyric_string method, LyricSlice_Type arg_types) {
@@ -53348,13 +53273,31 @@ LType Lowerer_lower_type(Lowerer self, TypeExpr te) {
         Sym brand = _t140;
         lyric_string _t141 = _lyric_slab_Sym.name[iface_name];
         lyric_string n = _t141;
-        LTypeKind _t142 = LTypeKind_TyInterfaceRef;
-        LType _t143 = _lyric_slab_alloc_LType();
-        _lyric_slab_LType.kind[_t143] = _t142;
-        _lyric_slab_LType.name[_t143] = n;
-        _lyric_slab_LType.bits[_t143] = 0;
-        _lyric_slab_LType.is_exported[_t143] = false;
-        return _t143;
+        lyric_string mn = LYRIC_STR("");
+        bool _t142 = (member_name == 0);
+        bool _t143 = (!_t142);
+        if (_t143) {
+            Sym _t144 = lyric_unwrap_class(member_name);
+            lyric_string _t145 = _lyric_slab_Sym.name[_t144];
+            mn = _t145;
+        }
+        lyric_string br = LYRIC_STR("");
+        bool _t146 = (brand == 0);
+        bool _t147 = (!_t146);
+        if (_t147) {
+            Sym _t148 = lyric_unwrap_class(brand);
+            lyric_string _t149 = _lyric_slab_Sym.name[_t148];
+            br = _t149;
+        }
+        LTypeKind _t150 = LTypeKind_TyInterfaceRef;
+        LType _t151 = _lyric_slab_alloc_LType();
+        _lyric_slab_LType.kind[_t151] = _t150;
+        _lyric_slab_LType.name[_t151] = n;
+        _lyric_slab_LType.member_name[_t151] = mn;
+        _lyric_slab_LType.brand[_t151] = br;
+        _lyric_slab_LType.bits[_t151] = 0;
+        _lyric_slab_LType.is_exported[_t151] = false;
+        return _t151;
         break;
     }
     default: __builtin_unreachable();
@@ -70920,20 +70863,23 @@ LType subst_type(LType t, Dict_CSym_opt_CLType subst) {
     bool _t128 = _lyric_slab_LType.is_exported[_t127];
     LType _t129 = lyric_unwrap_class(t);
     lyric_string _t130 = _lyric_slab_LType.member_name[_t129];
-    LType _t131 = _lyric_slab_alloc_LType();
-    _lyric_slab_LType.kind[_t131] = _t113;
-    _lyric_slab_LType.name[_t131] = _t115;
-    _lyric_slab_LType.elem[_t131] = _t118;
-    _lyric_slab_LType.key[_t131] = _t121;
-    _lyric_slab_LType.fields[_t131] = new_fields;
-    _lyric_slab_LType.params[_t131] = new_params;
-    _lyric_slab_LType.ret[_t131] = _t124;
-    _lyric_slab_LType.variants[_t131] = new_variants;
-    _lyric_slab_LType.type_args[_t131] = new_type_args;
-    _lyric_slab_LType.bits[_t131] = _t126;
-    _lyric_slab_LType.is_exported[_t131] = _t128;
-    _lyric_slab_LType.member_name[_t131] = _t130;
-    return _t131;
+    LType _t131 = lyric_unwrap_class(t);
+    lyric_string _t132 = _lyric_slab_LType.brand[_t131];
+    LType _t133 = _lyric_slab_alloc_LType();
+    _lyric_slab_LType.kind[_t133] = _t113;
+    _lyric_slab_LType.name[_t133] = _t115;
+    _lyric_slab_LType.elem[_t133] = _t118;
+    _lyric_slab_LType.key[_t133] = _t121;
+    _lyric_slab_LType.fields[_t133] = new_fields;
+    _lyric_slab_LType.params[_t133] = new_params;
+    _lyric_slab_LType.ret[_t133] = _t124;
+    _lyric_slab_LType.variants[_t133] = new_variants;
+    _lyric_slab_LType.type_args[_t133] = new_type_args;
+    _lyric_slab_LType.bits[_t133] = _t126;
+    _lyric_slab_LType.is_exported[_t133] = _t128;
+    _lyric_slab_LType.member_name[_t133] = _t130;
+    _lyric_slab_LType.brand[_t133] = _t132;
+    return _t133;
 }
 
 LType MonoPass_subst_type_remove_vars(MonoPass self, LType t) {
@@ -70993,99 +70939,105 @@ LType MonoPass_subst_type_remove_vars(MonoPass self, LType t) {
                 bool _t41 = _lyric_slab_LType.is_exported[_t40];
                 LType _t42 = lyric_unwrap_class(t);
                 lyric_string _t43 = _lyric_slab_LType.member_name[_t42];
-                LType _t44 = _lyric_slab_alloc_LType();
-                _lyric_slab_LType.kind[_t44] = _t25;
-                _lyric_slab_LType.name[_t44] = mangled;
-                _lyric_slab_LType.elem[_t44] = _t27;
-                _lyric_slab_LType.key[_t44] = _t29;
-                _lyric_slab_LType.fields[_t44] = _t31;
-                _lyric_slab_LType.params[_t44] = _t32;
-                _lyric_slab_LType.ret[_t44] = _t34;
-                _lyric_slab_LType.variants[_t44] = _t36;
-                _lyric_slab_LType.type_args[_t44] = _t37;
-                _lyric_slab_LType.bits[_t44] = _t39;
-                _lyric_slab_LType.is_exported[_t44] = _t41;
-                _lyric_slab_LType.member_name[_t44] = _t43;
-                return _t44;
+                LType _t44 = lyric_unwrap_class(t);
+                lyric_string _t45 = _lyric_slab_LType.brand[_t44];
+                LType _t46 = _lyric_slab_alloc_LType();
+                _lyric_slab_LType.kind[_t46] = _t25;
+                _lyric_slab_LType.name[_t46] = mangled;
+                _lyric_slab_LType.elem[_t46] = _t27;
+                _lyric_slab_LType.key[_t46] = _t29;
+                _lyric_slab_LType.fields[_t46] = _t31;
+                _lyric_slab_LType.params[_t46] = _t32;
+                _lyric_slab_LType.ret[_t46] = _t34;
+                _lyric_slab_LType.variants[_t46] = _t36;
+                _lyric_slab_LType.type_args[_t46] = _t37;
+                _lyric_slab_LType.bits[_t46] = _t39;
+                _lyric_slab_LType.is_exported[_t46] = _t41;
+                _lyric_slab_LType.member_name[_t46] = _t43;
+                _lyric_slab_LType.brand[_t46] = _t45;
+                return _t46;
             }
         }
     }
-    LType _t45 = lyric_unwrap_class(t);
-    LType _t46 = _lyric_slab_LType.elem[_t45];
-    LType _t47 = MonoPass_subst_type_remove_vars(self, _t46);
-    LType new_elem = _t47;
-    LType _t48 = lyric_unwrap_class(t);
-    LType _t49 = _lyric_slab_LType.key[_t48];
-    LType _t50 = MonoPass_subst_type_remove_vars(self, _t49);
-    LType new_key = _t50;
-    LType _t51 = lyric_unwrap_class(t);
-    LType _t52 = _lyric_slab_LType.ret[_t51];
-    LType _t53 = MonoPass_subst_type_remove_vars(self, _t52);
-    LType new_ret = _t53;
-    LyricSlice_LType _t54 = lyric_slice_empty(LyricSlice_LType);
-    LyricSlice_LType new_params = _t54;
+    LType _t47 = lyric_unwrap_class(t);
+    LType _t48 = _lyric_slab_LType.elem[_t47];
+    LType _t49 = MonoPass_subst_type_remove_vars(self, _t48);
+    LType new_elem = _t49;
+    LType _t50 = lyric_unwrap_class(t);
+    LType _t51 = _lyric_slab_LType.key[_t50];
+    LType _t52 = MonoPass_subst_type_remove_vars(self, _t51);
+    LType new_key = _t52;
+    LType _t53 = lyric_unwrap_class(t);
+    LType _t54 = _lyric_slab_LType.ret[_t53];
+    LType _t55 = MonoPass_subst_type_remove_vars(self, _t54);
+    LType new_ret = _t55;
+    LyricSlice_LType _t56 = lyric_slice_empty(LyricSlice_LType);
+    LyricSlice_LType new_params = _t56;
     int32_t i = 0;
     while (1) {
-        LType _t55 = lyric_unwrap_class(t);
-        LyricSlice_LType _t56 = _lyric_slab_LType.params[_t55];
-        int32_t _t57 = _t56.len;
-        bool _t58 = (i < _t57);
-        if (!(_t58)) break;
-        LType _t59 = lyric_unwrap_class(t);
-        LyricSlice_LType _t60 = _lyric_slab_LType.params[_t59];
-        LType _t61 = _t60.data[i];
-        LType _t62 = MonoPass_subst_type_remove_vars(self, _t61);
-        LyricSlice_LType _t63 = ({ lyric_push(&new_params, _t62, LyricSlice_LType); new_params; });
-        _t63;
-        int32_t _t64 = (i + 1);
-        i = _t64;
+        LType _t57 = lyric_unwrap_class(t);
+        LyricSlice_LType _t58 = _lyric_slab_LType.params[_t57];
+        int32_t _t59 = _t58.len;
+        bool _t60 = (i < _t59);
+        if (!(_t60)) break;
+        LType _t61 = lyric_unwrap_class(t);
+        LyricSlice_LType _t62 = _lyric_slab_LType.params[_t61];
+        LType _t63 = _t62.data[i];
+        LType _t64 = MonoPass_subst_type_remove_vars(self, _t63);
+        LyricSlice_LType _t65 = ({ lyric_push(&new_params, _t64, LyricSlice_LType); new_params; });
+        _t65;
+        int32_t _t66 = (i + 1);
+        i = _t66;
     }
-    LyricSlice_LType _t65 = lyric_slice_empty(LyricSlice_LType);
-    LyricSlice_LType new_type_args = _t65;
+    LyricSlice_LType _t67 = lyric_slice_empty(LyricSlice_LType);
+    LyricSlice_LType new_type_args = _t67;
     i = 0;
     while (1) {
-        LType _t66 = lyric_unwrap_class(t);
-        LyricSlice_LType _t67 = _lyric_slab_LType.type_args[_t66];
-        int32_t _t68 = _t67.len;
-        bool _t69 = (i < _t68);
-        if (!(_t69)) break;
-        LType _t70 = lyric_unwrap_class(t);
-        LyricSlice_LType _t71 = _lyric_slab_LType.type_args[_t70];
-        LType _t72 = _t71.data[i];
-        LType _t73 = MonoPass_subst_type_remove_vars(self, _t72);
-        LyricSlice_LType _t74 = ({ lyric_push(&new_type_args, _t73, LyricSlice_LType); new_type_args; });
-        _t74;
-        int32_t _t75 = (i + 1);
-        i = _t75;
+        LType _t68 = lyric_unwrap_class(t);
+        LyricSlice_LType _t69 = _lyric_slab_LType.type_args[_t68];
+        int32_t _t70 = _t69.len;
+        bool _t71 = (i < _t70);
+        if (!(_t71)) break;
+        LType _t72 = lyric_unwrap_class(t);
+        LyricSlice_LType _t73 = _lyric_slab_LType.type_args[_t72];
+        LType _t74 = _t73.data[i];
+        LType _t75 = MonoPass_subst_type_remove_vars(self, _t74);
+        LyricSlice_LType _t76 = ({ lyric_push(&new_type_args, _t75, LyricSlice_LType); new_type_args; });
+        _t76;
+        int32_t _t77 = (i + 1);
+        i = _t77;
     }
-    LType _t76 = lyric_unwrap_class(t);
-    LTypeKind _t77 = _lyric_slab_LType.kind[_t76];
     LType _t78 = lyric_unwrap_class(t);
-    lyric_string _t79 = _lyric_slab_LType.name[_t78];
+    LTypeKind _t79 = _lyric_slab_LType.kind[_t78];
     LType _t80 = lyric_unwrap_class(t);
-    LyricSlice_LField _t81 = _lyric_slab_LType.fields[_t80];
+    lyric_string _t81 = _lyric_slab_LType.name[_t80];
     LType _t82 = lyric_unwrap_class(t);
-    LyricSlice_LVariant _t83 = _lyric_slab_LType.variants[_t82];
+    LyricSlice_LField _t83 = _lyric_slab_LType.fields[_t82];
     LType _t84 = lyric_unwrap_class(t);
-    int32_t _t85 = _lyric_slab_LType.bits[_t84];
+    LyricSlice_LVariant _t85 = _lyric_slab_LType.variants[_t84];
     LType _t86 = lyric_unwrap_class(t);
-    bool _t87 = _lyric_slab_LType.is_exported[_t86];
+    int32_t _t87 = _lyric_slab_LType.bits[_t86];
     LType _t88 = lyric_unwrap_class(t);
-    lyric_string _t89 = _lyric_slab_LType.member_name[_t88];
-    LType _t90 = _lyric_slab_alloc_LType();
-    _lyric_slab_LType.kind[_t90] = _t77;
-    _lyric_slab_LType.name[_t90] = _t79;
-    _lyric_slab_LType.elem[_t90] = new_elem;
-    _lyric_slab_LType.key[_t90] = new_key;
-    _lyric_slab_LType.fields[_t90] = _t81;
-    _lyric_slab_LType.params[_t90] = new_params;
-    _lyric_slab_LType.ret[_t90] = new_ret;
-    _lyric_slab_LType.variants[_t90] = _t83;
-    _lyric_slab_LType.type_args[_t90] = new_type_args;
-    _lyric_slab_LType.bits[_t90] = _t85;
-    _lyric_slab_LType.is_exported[_t90] = _t87;
-    _lyric_slab_LType.member_name[_t90] = _t89;
-    return _t90;
+    bool _t89 = _lyric_slab_LType.is_exported[_t88];
+    LType _t90 = lyric_unwrap_class(t);
+    lyric_string _t91 = _lyric_slab_LType.member_name[_t90];
+    LType _t92 = lyric_unwrap_class(t);
+    lyric_string _t93 = _lyric_slab_LType.brand[_t92];
+    LType _t94 = _lyric_slab_alloc_LType();
+    _lyric_slab_LType.kind[_t94] = _t79;
+    _lyric_slab_LType.name[_t94] = _t81;
+    _lyric_slab_LType.elem[_t94] = new_elem;
+    _lyric_slab_LType.key[_t94] = new_key;
+    _lyric_slab_LType.fields[_t94] = _t83;
+    _lyric_slab_LType.params[_t94] = new_params;
+    _lyric_slab_LType.ret[_t94] = new_ret;
+    _lyric_slab_LType.variants[_t94] = _t85;
+    _lyric_slab_LType.type_args[_t94] = new_type_args;
+    _lyric_slab_LType.bits[_t94] = _t87;
+    _lyric_slab_LType.is_exported[_t94] = _t89;
+    _lyric_slab_LType.member_name[_t94] = _t91;
+    _lyric_slab_LType.brand[_t94] = _t93;
+    return _t94;
 }
 
 LyricSlice_LStmt clone_stmts(LyricSlice_LStmt stmts, Dict_CSym_opt_CLType subst) {
