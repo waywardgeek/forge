@@ -2,8 +2,15 @@
 
 A self-hosting systems language with **relations** for ownership, **multi-class
 interfaces** for generic algorithms, and a one-flag switch from Array-of-Structs
-to Struct-of-Arrays memory layout. Compiles to C. Built in fourteen days as the
-first language designed inside a human-and-LLM loop-engineering loop.
+to Struct-of-Arrays memory layout. Compiles to C. Reached its bootstrap fixed
+point nine days after the first commit, the first language designed inside a
+human-and-LLM loop-engineering loop.
+
+**Verify that claim yourself:** the repository's first commit is dated
+2026-06-03 (`ee0fe0f`). The self-hosting fixed point was reached 2026-06-12
+(`1f34b8d`, "fixed point reached"). Both dates are in the public git log, and
+`make self-test` re-checks the fixed point on every change.
+
 
 **Repository:** [github.com/waywardgeek/lyric](https://github.com/waywardgeek/lyric)
 
@@ -27,8 +34,8 @@ them in one place:
   primitive. One `relation` line replaces hundreds of lines of manual
   ownership, destructor, and collection plumbing.
 - **C as the compilation target** — not LLVM, not a VM. GCC and Clang already
-  know how to optimize C, and 33,500 lines of Lyric compile to a single C file
-  in about 0.2 seconds.
+  know how to optimize C, and 36,400 lines of Lyric compile to a single C file
+  in about 0.35 seconds.
 
 No garbage collector. No borrow checker. No lifetime annotations. Ownership is
 declared, not inferred.
@@ -136,7 +143,7 @@ $ ./lyric compile --soa myapp.ly -o myapp_soa.c  # SoA: parallel arrays per fiel
 The same source compiles to two layouts. AoS uses pointer handles to a slab of
 contiguous objects. SoA uses 32-bit indices into parallel per-field arrays —
 every cache line iterating one field is full of that field's bytes. Measured on
-the Lyric compiler compiling its own 33,500 lines: **10% faster, 14% less
+the Lyric compiler compiling its own source: **10% faster, 14% less
 memory** on a MacBook Air M2.
 
 This works because the relation system already gave the compiler enough
@@ -161,9 +168,9 @@ The 20% line reduction exceeds the 10% byte reduction because Lyric lines are
 replacing boilerplate, `match` replacing `if/else if` chains, `?` replacing
 three-line `if err != nil { return ..., err }` blocks — not denser formatting.
 
-The compiler today: **33,531 lines of Lyric** (32,533 compiler + 998 stdlib)
-across **14 files in 12 directories**, compiling to **114,473 lines of C** in
-**~0.2 seconds**. End-to-end source-to-binary including GCC: under 5 seconds.
+The compiler today: **36,446 lines of Lyric** (35,416 compiler + 1,030 stdlib)
+across **14 files in 12 directories**, compiling to **123,335 lines of C** in
+**~0.35 seconds**. End-to-end source-to-binary including GCC: under 5 seconds.
 
 These numbers are a *transliteration* of Go patterns into Lyric — the bootstrap
 was the obvious first iteration. Every subsequent round of loop engineering on
@@ -175,10 +182,14 @@ margins.
 ## Status — Honest
 
 **Self-hosting.** The compiler is written in Lyric, compiles itself, and
-reaches a byte-identical fixed point on every change (`make self-test`).
+reaches a byte-identical fixed point on its own source (`make self-test`).
 
-**91 tests** under `testdata/`, 83 paired with golden outputs. `make test` runs
-them all.
+**105 tests** under `testdata/`, 85 paired with golden outputs. `make test` runs
+them all. **97 pass, 8 fail** at this commit. The failures are real and tracked,
+not skipped: they cover in-progress multi-class interface work
+(`iface_v2_*`), a global `Dict` reference-counting bug, an optional-struct
+write-back bug, and `tree.ly`. Development happens in the open, so the suite
+reflects mid-flight work rather than a curated green badge.
 
 **Not 1.0.** The roadmap items in `TODO.md` and `IDEAS.md` are real. Highlights
 of what is *not* in yet:
@@ -260,7 +271,7 @@ src/                Self-hosted Lyric compiler source (.ly)
   main/             CLI
 
 runtime/            C runtime headers (slabs, slices, optionals, channels)
-stdlib/             Standard library — std.ly (740 lines) + string.ly (258)
+stdlib/             Standard library — std.ly (772 lines) + string.ly (258)
 testdata/           Regression .ly programs (+ golden/ expected outputs)
 legacy/go-compiler/ Original Go compiler — preserved for reference, retired
 cr/docs/            Design documents
@@ -286,7 +297,7 @@ preface makes the full pitch; the short version:
 3. **The substrate teaches good architecture.** Lyric is what an opinionated
    senior engineer would design starting over. KISS is enforced by the type
    system, not by code review.
-4. **The corpus is small.** ~33,500 lines of Lyric source plus the spec,
+4. **The corpus is small.** ~36,400 lines of Lyric source plus the spec,
    reference, and book is well under a million tokens. Cheap to ingest.
 5. **It compounds.** Current frontier LLMs have no Lyric in their weights —
    the authors of this README feel the absence directly. The first model
