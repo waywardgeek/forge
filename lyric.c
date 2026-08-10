@@ -12742,17 +12742,17 @@ void ast_collect_var_refs_in_block(Block block, Dict_CSym_bool names);
 Dict_CSym_bool ast_collect_used_func_names(File file);
 bool ast_func_references_types(FuncDecl fn_, Dict_CSym_bool used_types);
 void merge_stdlib(File file, File std_file);
-bool str_has_prefix(lyric_string s, lyric_string prefix);
-bool str_has_suffix(lyric_string s, lyric_string suffix);
-int32_t str_index_of(lyric_string haystack, lyric_string needle);
-LyricSlice_lyric_string str_split(lyric_string s, lyric_string sep);
-lyric_string str_trim(lyric_string s);
 Sym sym(lyric_string name);
 int64_t parse_int(lyric_string s);
 double str_to_float(lyric_string s);
 StringBuilder new_string_builder(void);
 range_gen_t* range_init(int32_t start, int32_t end);
 bool range_next(range_gen_t* _gen);
+bool str_has_prefix(lyric_string s, lyric_string prefix);
+bool str_has_suffix(lyric_string s, lyric_string suffix);
+int32_t str_index_of(lyric_string haystack, lyric_string needle);
+LyricSlice_lyric_string str_split(lyric_string s, lyric_string sep);
+lyric_string str_trim(lyric_string s);
 uint64_t i8_get_hash(int8_t self);
 uint64_t i16_get_hash(int16_t self);
 uint64_t i32_get_hash(int32_t self);
@@ -12761,8 +12761,8 @@ uint64_t u8_get_hash(uint8_t self);
 uint64_t u16_get_hash(uint16_t self);
 uint64_t u32_get_hash(uint32_t self);
 uint64_t u64_get_hash(uint64_t self);
-bool is_whitespace(uint8_t ch);
 SymTable _get_sym_table(void);
+bool is_whitespace(uint8_t ch);
 bool Sym_equals(Sym self, Sym other);
 void TypeExpr_destroy(TypeExpr self);
 void TupleField_destroy(TupleField self);
@@ -17429,195 +17429,6 @@ void merge_stdlib(File file, File std_file) {
     if (merged_var_refs && --_lyric_slab_Dict_CSym_bool._rc[merged_var_refs] == 0) Dict_CSym_bool_destroy(merged_var_refs);
 }
 
-bool str_has_prefix(lyric_string s, lyric_string prefix) {
-    int32_t _t0 = prefix.len;
-    int32_t _t1 = s.len;
-    bool _t2 = (_t0 > _t1);
-    if (_t2) {
-        return false;
-    }
-    int32_t i = 0;
-    while (1) {
-        int32_t _t3 = prefix.len;
-        bool _t4 = (i < _t3);
-        if (!(_t4)) break;
-        uint8_t _t5 = s.data[i];
-        uint8_t _t6 = prefix.data[i];
-        bool _t7 = (_t5 != _t6);
-        if (_t7) {
-            return false;
-        }
-        int32_t _t8 = (i + 1);
-        i = _t8;
-    }
-    return true;
-}
-
-bool str_has_suffix(lyric_string s, lyric_string suffix) {
-    int32_t _t0 = suffix.len;
-    int32_t _t1 = s.len;
-    bool _t2 = (_t0 > _t1);
-    if (_t2) {
-        return false;
-    }
-    int32_t _t3 = s.len;
-    int32_t _t4 = suffix.len;
-    int32_t _t5 = (_t3 - _t4);
-    int32_t offset = _t5;
-    int32_t i = 0;
-    while (1) {
-        int32_t _t6 = suffix.len;
-        bool _t7 = (i < _t6);
-        if (!(_t7)) break;
-        int32_t _t8 = (offset + i);
-        uint8_t _t9 = s.data[_t8];
-        uint8_t _t10 = suffix.data[i];
-        bool _t11 = (_t9 != _t10);
-        if (_t11) {
-            return false;
-        }
-        int32_t _t12 = (i + 1);
-        i = _t12;
-    }
-    return true;
-}
-
-int32_t str_index_of(lyric_string haystack, lyric_string needle) {
-    int32_t _t0 = needle.len;
-    bool _t1 = (_t0 == 0);
-    if (_t1) {
-        return 0;
-    }
-    int32_t _t2 = needle.len;
-    int32_t _t3 = haystack.len;
-    bool _t4 = (_t2 > _t3);
-    if (_t4) {
-        int32_t _t5 = (-1);
-        return _t5;
-    }
-    int32_t _t6 = haystack.len;
-    int32_t _t7 = needle.len;
-    int32_t _t8 = (_t6 - _t7);
-    int32_t limit = _t8;
-    int32_t i = 0;
-    while (1) {
-        bool _t9 = (i <= limit);
-        if (!(_t9)) break;
-        int32_t j = 0;
-        while (1) {
-            int32_t _t10 = needle.len;
-            bool _t11 = (j < _t10);
-            bool _sc12 = false;
-            _sc12 = _t11;
-            if (_sc12) {
-                int32_t _t13 = (i + j);
-                uint8_t _t14 = haystack.data[_t13];
-                uint8_t _t15 = needle.data[j];
-                bool _t16 = (_t14 == _t15);
-                _sc12 = _t16;
-            }
-            if (!(_sc12)) break;
-            int32_t _t17 = (j + 1);
-            j = _t17;
-        }
-        int32_t _t18 = needle.len;
-        bool _t19 = (j == _t18);
-        if (_t19) {
-            return i;
-        }
-        int32_t _t20 = (i + 1);
-        i = _t20;
-    }
-    int32_t _t21 = (-1);
-    return _t21;
-}
-
-LyricSlice_lyric_string str_split(lyric_string s, lyric_string sep) {
-    LyricSlice_lyric_string _t0 = lyric_slice_empty(LyricSlice_lyric_string);
-    LyricSlice_lyric_string result = _t0;
-    int32_t _t1 = sep.len;
-    bool _t2 = (_t1 == 0);
-    if (_t2) {
-        int32_t i = 0;
-        while (1) {
-            int32_t _t3 = s.len;
-            bool _t4 = (i < _t3);
-            if (!(_t4)) break;
-            uint8_t _t5 = s.data[i];
-            lyric_string _t6 = lyric_char_to_string(_t5);
-            LyricSlice_lyric_string _t7 = ({ lyric_push(&result, _t6, LyricSlice_lyric_string); result; });
-            result = _t7;
-            int32_t _t8 = (i + 1);
-            i = _t8;
-        }
-        return result;
-    }
-    int32_t start = 0;
-    while (1) {
-        int32_t _t9 = s.len;
-        bool _t10 = (start <= _t9);
-        if (!(_t10)) break;
-        int32_t _t11 = s.len;
-        lyric_string _t12 = lyric_subslice(s, start, _t11, lyric_string);
-        int32_t _t13 = lyric_str_index_of(_t12, sep);
-        int32_t idx = _t13;
-        bool _t14 = (idx < 0);
-        if (_t14) {
-            int32_t _t15 = s.len;
-            lyric_string _t16 = lyric_subslice(s, start, _t15, lyric_string);
-            LyricSlice_lyric_string _t17 = ({ lyric_push(&result, _t16, LyricSlice_lyric_string); result; });
-            result = _t17;
-            return result;
-        }
-        int32_t _t18 = (start + idx);
-        lyric_string _t19 = lyric_subslice(s, start, _t18, lyric_string);
-        LyricSlice_lyric_string _t20 = ({ lyric_push(&result, _t19, LyricSlice_lyric_string); result; });
-        result = _t20;
-        int32_t _t21 = (start + idx);
-        int32_t _t22 = sep.len;
-        int32_t _t23 = (_t21 + _t22);
-        start = _t23;
-    }
-    return result;
-    if (result.cap > 0 && result.data) free(result.data);
-}
-
-lyric_string str_trim(lyric_string s) {
-    int32_t lo = 0;
-    while (1) {
-        int32_t _t0 = s.len;
-        bool _t1 = (lo < _t0);
-        bool _sc2 = false;
-        _sc2 = _t1;
-        if (_sc2) {
-            uint8_t _t3 = s.data[lo];
-            bool _t4 = is_whitespace(_t3);
-            _sc2 = _t4;
-        }
-        if (!(_sc2)) break;
-        int32_t _t5 = (lo + 1);
-        lo = _t5;
-    }
-    int32_t _t6 = s.len;
-    int32_t hi = _t6;
-    while (1) {
-        bool _t7 = (hi > lo);
-        bool _sc8 = false;
-        _sc8 = _t7;
-        if (_sc8) {
-            int32_t _t9 = (hi - 1);
-            uint8_t _t10 = s.data[_t9];
-            bool _t11 = is_whitespace(_t10);
-            _sc8 = _t11;
-        }
-        if (!(_sc8)) break;
-        int32_t _t12 = (hi - 1);
-        hi = _t12;
-    }
-    lyric_string _t13 = lyric_subslice(s, lo, hi, lyric_string);
-    return _t13;
-}
-
 Sym sym(lyric_string name) {
     uint64_t _t0 = lyric_hash_string(name);
     uint64_t h = _t0;
@@ -17829,6 +17640,195 @@ bool range_next(range_gen_t* _gen) {
     return false;
 }
 
+bool str_has_prefix(lyric_string s, lyric_string prefix) {
+    int32_t _t0 = prefix.len;
+    int32_t _t1 = s.len;
+    bool _t2 = (_t0 > _t1);
+    if (_t2) {
+        return false;
+    }
+    int32_t i = 0;
+    while (1) {
+        int32_t _t3 = prefix.len;
+        bool _t4 = (i < _t3);
+        if (!(_t4)) break;
+        uint8_t _t5 = s.data[i];
+        uint8_t _t6 = prefix.data[i];
+        bool _t7 = (_t5 != _t6);
+        if (_t7) {
+            return false;
+        }
+        int32_t _t8 = (i + 1);
+        i = _t8;
+    }
+    return true;
+}
+
+bool str_has_suffix(lyric_string s, lyric_string suffix) {
+    int32_t _t0 = suffix.len;
+    int32_t _t1 = s.len;
+    bool _t2 = (_t0 > _t1);
+    if (_t2) {
+        return false;
+    }
+    int32_t _t3 = s.len;
+    int32_t _t4 = suffix.len;
+    int32_t _t5 = (_t3 - _t4);
+    int32_t offset = _t5;
+    int32_t i = 0;
+    while (1) {
+        int32_t _t6 = suffix.len;
+        bool _t7 = (i < _t6);
+        if (!(_t7)) break;
+        int32_t _t8 = (offset + i);
+        uint8_t _t9 = s.data[_t8];
+        uint8_t _t10 = suffix.data[i];
+        bool _t11 = (_t9 != _t10);
+        if (_t11) {
+            return false;
+        }
+        int32_t _t12 = (i + 1);
+        i = _t12;
+    }
+    return true;
+}
+
+int32_t str_index_of(lyric_string haystack, lyric_string needle) {
+    int32_t _t0 = needle.len;
+    bool _t1 = (_t0 == 0);
+    if (_t1) {
+        return 0;
+    }
+    int32_t _t2 = needle.len;
+    int32_t _t3 = haystack.len;
+    bool _t4 = (_t2 > _t3);
+    if (_t4) {
+        int32_t _t5 = (-1);
+        return _t5;
+    }
+    int32_t _t6 = haystack.len;
+    int32_t _t7 = needle.len;
+    int32_t _t8 = (_t6 - _t7);
+    int32_t limit = _t8;
+    int32_t i = 0;
+    while (1) {
+        bool _t9 = (i <= limit);
+        if (!(_t9)) break;
+        int32_t j = 0;
+        while (1) {
+            int32_t _t10 = needle.len;
+            bool _t11 = (j < _t10);
+            bool _sc12 = false;
+            _sc12 = _t11;
+            if (_sc12) {
+                int32_t _t13 = (i + j);
+                uint8_t _t14 = haystack.data[_t13];
+                uint8_t _t15 = needle.data[j];
+                bool _t16 = (_t14 == _t15);
+                _sc12 = _t16;
+            }
+            if (!(_sc12)) break;
+            int32_t _t17 = (j + 1);
+            j = _t17;
+        }
+        int32_t _t18 = needle.len;
+        bool _t19 = (j == _t18);
+        if (_t19) {
+            return i;
+        }
+        int32_t _t20 = (i + 1);
+        i = _t20;
+    }
+    int32_t _t21 = (-1);
+    return _t21;
+}
+
+LyricSlice_lyric_string str_split(lyric_string s, lyric_string sep) {
+    LyricSlice_lyric_string _t0 = lyric_slice_empty(LyricSlice_lyric_string);
+    LyricSlice_lyric_string result = _t0;
+    int32_t _t1 = sep.len;
+    bool _t2 = (_t1 == 0);
+    if (_t2) {
+        int32_t i = 0;
+        while (1) {
+            int32_t _t3 = s.len;
+            bool _t4 = (i < _t3);
+            if (!(_t4)) break;
+            uint8_t _t5 = s.data[i];
+            lyric_string _t6 = lyric_char_to_string(_t5);
+            LyricSlice_lyric_string _t7 = ({ lyric_push(&result, _t6, LyricSlice_lyric_string); result; });
+            result = _t7;
+            int32_t _t8 = (i + 1);
+            i = _t8;
+        }
+        return result;
+    }
+    int32_t start = 0;
+    while (1) {
+        int32_t _t9 = s.len;
+        bool _t10 = (start <= _t9);
+        if (!(_t10)) break;
+        int32_t _t11 = s.len;
+        lyric_string _t12 = lyric_subslice(s, start, _t11, lyric_string);
+        int32_t _t13 = lyric_str_index_of(_t12, sep);
+        int32_t idx = _t13;
+        bool _t14 = (idx < 0);
+        if (_t14) {
+            int32_t _t15 = s.len;
+            lyric_string _t16 = lyric_subslice(s, start, _t15, lyric_string);
+            LyricSlice_lyric_string _t17 = ({ lyric_push(&result, _t16, LyricSlice_lyric_string); result; });
+            result = _t17;
+            return result;
+        }
+        int32_t _t18 = (start + idx);
+        lyric_string _t19 = lyric_subslice(s, start, _t18, lyric_string);
+        LyricSlice_lyric_string _t20 = ({ lyric_push(&result, _t19, LyricSlice_lyric_string); result; });
+        result = _t20;
+        int32_t _t21 = (start + idx);
+        int32_t _t22 = sep.len;
+        int32_t _t23 = (_t21 + _t22);
+        start = _t23;
+    }
+    return result;
+    if (result.cap > 0 && result.data) free(result.data);
+}
+
+lyric_string str_trim(lyric_string s) {
+    int32_t lo = 0;
+    while (1) {
+        int32_t _t0 = s.len;
+        bool _t1 = (lo < _t0);
+        bool _sc2 = false;
+        _sc2 = _t1;
+        if (_sc2) {
+            uint8_t _t3 = s.data[lo];
+            bool _t4 = is_whitespace(_t3);
+            _sc2 = _t4;
+        }
+        if (!(_sc2)) break;
+        int32_t _t5 = (lo + 1);
+        lo = _t5;
+    }
+    int32_t _t6 = s.len;
+    int32_t hi = _t6;
+    while (1) {
+        bool _t7 = (hi > lo);
+        bool _sc8 = false;
+        _sc8 = _t7;
+        if (_sc8) {
+            int32_t _t9 = (hi - 1);
+            uint8_t _t10 = s.data[_t9];
+            bool _t11 = is_whitespace(_t10);
+            _sc8 = _t11;
+        }
+        if (!(_sc8)) break;
+        int32_t _t12 = (hi - 1);
+        hi = _t12;
+    }
+    lyric_string _t13 = lyric_subslice(s, lo, hi, lyric_string);
+    return _t13;
+}
+
 uint64_t i8_get_hash(int8_t self) {
     uint64_t _t0 = ((uint64_t)self);
     return _t0;
@@ -17868,6 +17868,16 @@ uint64_t u64_get_hash(uint64_t self) {
     return self;
 }
 
+SymTable _get_sym_table(void) {
+    bool _t0 = (_sym_table == 0);
+    if (_t0) {
+        SymTable _t1 = _lyric_slab_alloc_SymTable();
+        _sym_table = _t1;
+    }
+    SymTable _t2 = lyric_unwrap_class(_sym_table);
+    return _t2;
+}
+
 bool is_whitespace(uint8_t ch) {
     bool _t0 = (ch == 32U);
     bool _sc1 = false;
@@ -17892,16 +17902,6 @@ bool is_whitespace(uint8_t ch) {
         _sc7 = _t9;
     }
     return _sc7;
-}
-
-SymTable _get_sym_table(void) {
-    bool _t0 = (_sym_table == 0);
-    if (_t0) {
-        SymTable _t1 = _lyric_slab_alloc_SymTable();
-        _sym_table = _t1;
-    }
-    SymTable _t2 = lyric_unwrap_class(_sym_table);
-    return _t2;
 }
 
 bool Sym_equals(Sym self, Sym other) {
